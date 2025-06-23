@@ -34,32 +34,62 @@ def plot_total_billing_per_carrier(df):
     return fig
 
 def plot_total_billing_per_dispatcher(df):
-    """2. Total Billing per Dispatcher - Horizontal Bar Chart + Data Labels"""
+    """2. Total Billing per Dispatcher - Horizontal Bar Chart + BD Margin Overlay + Data Labels"""
     if df.empty or 'DISPATCH NAME' not in df.columns:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
-    # Group by dispatcher and sum billing
-    dispatcher_billing = df.groupby('DISPATCH NAME')['BROKER RATE (CFC)'].sum().reset_index()
-    dispatcher_billing = dispatcher_billing.sort_values('BROKER RATE (CFC)', ascending=True)
+    # Group by dispatcher and sum both billing and BD margin
+    dispatcher_stats = df.groupby('DISPATCH NAME').agg({
+        'BROKER RATE (CFC)': 'sum',
+        'BD MARGIN': 'sum'
+    }).reset_index()
     
-    fig = px.bar(
-        dispatcher_billing,
-        x='BROKER RATE (CFC)',
-        y='DISPATCH NAME',
+    # Sort by billing amount
+    dispatcher_stats = dispatcher_stats.sort_values('BROKER RATE (CFC)', ascending=True)
+    
+    # Create figure with secondary y-axis
+    fig = go.Figure()
+    
+    # Add billing bars (green)
+    fig.add_trace(go.Bar(
+        x=dispatcher_stats['BROKER RATE (CFC)'],
+        y=dispatcher_stats['DISPATCH NAME'],
         orientation='h',
-        title='Total Billing per Dispatcher',
-        labels={'BROKER RATE (CFC)': 'Total Billing ($)', 'DISPATCH NAME': 'Dispatcher'},
-        text='BROKER RATE (CFC)',  # Data labels
-        color='BROKER RATE (CFC)',
-        color_continuous_scale='Greens'
-    )
+        name='Total Billing',
+        marker_color='lightgreen',
+        text=dispatcher_stats['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.0f}'),
+        textposition='outside',
+        hovertemplate='<b>%{y}</b><br>Total Billing: $%{x:,.0f}<extra></extra>'
+    ))
     
-    fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+    # Add BD margin bars (red) superimposed
+    fig.add_trace(go.Bar(
+        x=dispatcher_stats['BD MARGIN'],
+        y=dispatcher_stats['DISPATCH NAME'],
+        orientation='h',
+        name='BD Margin',
+        marker_color='red',
+        opacity=0.7,
+        text=dispatcher_stats['BD MARGIN'].apply(lambda x: f'${x:,.0f}'),
+        textposition='inside',
+        textfont=dict(color='white', size=10),
+        hovertemplate='<b>%{y}</b><br>BD Margin: $%{x:,.0f}<extra></extra>'
+    ))
+    
     fig.update_layout(
+        title='Total Billing per Dispatcher (with BD Margin Overlay)',
         height=400,
-        showlegend=False,
-        xaxis_title="Total Billing ($)",
-        yaxis_title="Dispatcher"
+        barmode='overlay',
+        xaxis_title="Amount ($)",
+        yaxis_title="Dispatcher",
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
     
     return fig
