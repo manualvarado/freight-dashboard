@@ -4,9 +4,6 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import streamlit as st
-import colorsys
-import random
 
 def get_week_start(date):
     if pd.isna(date):
@@ -154,62 +151,18 @@ def plot_loads_per_dispatcher_by_status(df):
     # Create pivot table
     status_pivot = df.groupby(['DISPATCH NAME', 'LOAD STATUS']).size().unstack(fill_value=0)
     
-    # Get all unique load statuses from the data
-    all_statuses = df['LOAD STATUS'].dropna().unique()
-    
-    # Create a comprehensive color map that covers all statuses
-    # Start with predefined colors for known statuses
-    predefined_colors = {
-        'Booked': '#2E8B57',      # Green
-        'Delivered': '#4169E1',   # Blue
-        'On dispute': '#FFD700',  # Gold
-        'TONU Received': '#FF6347', # Red
-        'Cancelled': '#DC143C',   # Crimson
-        'Disputing a TONU': '#FF4500', # Orange Red
-        'In Transit': '#32CD32',  # Lime Green
-        'Pending': '#FFA500',     # Orange
-        'Completed': '#008000',   # Dark Green
-        'Failed': '#8B0000',      # Dark Red
-        'Rejected': '#FF0000',    # Red
-        'Approved': '#00FF00',    # Bright Green
-        'Under Review': '#FFFF00', # Yellow
-        'On Hold': '#FF8C00',     # Dark Orange
-        'Rescheduled': '#9370DB', # Medium Purple
-        'No Show': '#FF1493',     # Deep Pink
-        'Late': '#FFD700',        # Gold
-        'Early': '#00CED1',       # Dark Turquoise
-        'Partial': '#FF69B4',     # Hot Pink
-        'Full': '#00FA9A'         # Medium Spring Green
-    }
-    
-    # Generate additional colors for any statuses not in predefined list
-    import colorsys
-    import random
-    
-    # Set random seed for consistent colors
-    random.seed(42)
-    
-    def generate_color():
-        """Generate a random but visually distinct color"""
-        hue = random.random()
-        saturation = 0.7 + random.random() * 0.3  # 0.7-1.0
-        value = 0.8 + random.random() * 0.2       # 0.8-1.0
-        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
-        return f'rgb({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)})'
-    
-    # Create final color map including all statuses
-    color_map = {}
-    for status in all_statuses:
-        if status in predefined_colors:
-            color_map[status] = predefined_colors[status]
-        else:
-            color_map[status] = generate_color()
-    
     fig = px.bar(
         status_pivot,
         title='Load Status Distribution per Dispatcher',
         labels={'value': 'Number of Loads', 'DISPATCH NAME': 'Dispatcher'},
-        color_discrete_map=color_map
+        color_discrete_map={
+            'Booked': '#2E8B57',      # Green
+            'Delivered': '#4169E1',   # Blue
+            'On dispute': '#FFD700',  # Gold
+            'TONU Received': '#FF6347', # Red
+            'Cancelled': '#DC143C',   # Crimson
+            'Disputing a TONU': '#FF4500' # Orange Red
+        }
     )
     
     fig.update_layout(
@@ -709,65 +662,30 @@ def plot_driver_income_analysis(weekly_earnings):
     return fig
 
 def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
-    """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=earnings, with color gradient based on target achievement. Fixes y-axis alignment."""
+    """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=earnings, vertical line for target."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    import numpy as np
-    
     targets = {
         'Flatbed/Stepdeck': 6000,
         'Dry Van/Reefer/Power Only': 5500
     }
-    
-    # Clean up driver names: drop NaN, convert to string, remove empty
-    df = weekly_earnings.copy()
-    df = df[df['DRIVER NAME'].notna() & (df['DRIVER NAME'].astype(str).str.strip() != '')].copy()
-    df['DRIVER NAME'] = df['DRIVER NAME'].astype(str)
-    
-    trailer_groups = [t for t in targets.keys() if t in df['TRAILER GROUP'].unique()]
+    trailer_groups = [t for t in targets.keys() if t in weekly_earnings['TRAILER GROUP'].unique()]
     n = len(trailer_groups)
-    if n == 0:
-        return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     fig = make_subplots(rows=1, cols=n, subplot_titles=trailer_groups, shared_yaxes=False)
     for i, group in enumerate(trailer_groups):
-        sub = df[df['TRAILER GROUP'] == group].copy()
-        def get_color_category(percentage):
-            if percentage > 110:
-                return '💚 Overachievers (>110%)'
-            elif percentage >= 100:
-                return '🟢 On Target (100–110%)'
-            elif percentage >= 80:
-                return '🟡 Watchlist (80–99%)'
-            else:
-                return '🔴 Underperformers (<80%)'
-        sub['Color_Category'] = sub['PERCENTAGE_TO_TARGET'].apply(get_color_category)
-        color_map = {
-            '💚 Overachievers (>110%)': '#00FF00',
-            '🟢 On Target (100–110%)': '#90EE90',
-            '🟡 Watchlist (80–99%)': '#FFFF00',
-            '🔴 Underperformers (<80%)': '#FF0000'
-        }
-        # Sort by earnings for consistent y-axis - INVERTED ORDER
-        sub = sub.sort_values('DRIVER RATE', ascending=True)
-        y_order = sub['DRIVER NAME'].tolist()
-        for category in color_map.keys():
-            category_data = sub[sub['Color_Category'] == category]
-            if not category_data.empty:
-                fig.add_trace(
-                    go.Bar(
-                        y=category_data['DRIVER NAME'],
-                        x=category_data['DRIVER RATE'],
-                        orientation='h',
-                        name=category,
-                        marker_color=color_map[category],
-                        showlegend=(i == 0),
-                        hovertemplate='<b>%{y}</b><br>Earnings: $%{x:,.0f}<br>% to Target: ' + \
-                                    category_data['PERCENTAGE_TO_TARGET'].astype(str) + '%<extra></extra>'
-                    ),
-                    row=1, col=i+1
-                )
-        # Set y-axis order explicitly - INVERTED
-        fig.update_yaxes(categoryorder='array', categoryarray=y_order, row=1, col=i+1)
+        sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group].sort_values('DRIVER RATE', ascending=False)
+        fig.add_trace(
+            go.Bar(
+                y=sub['DRIVER NAME'],
+                x=sub['DRIVER RATE'],
+                orientation='h',
+                name=group,
+                marker_color='skyblue',
+                showlegend=False,
+                hovertemplate='<b>%{y}</b><br>Earnings: $%{x:,.0f}<extra></extra>'
+            ),
+            row=1, col=i+1
+        )
         fig.add_vline(
             x=targets[group],
             line_dash="dash",
@@ -776,17 +694,11 @@ def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
             row=1, col=i+1
         )
         fig.update_xaxes(title_text="Weekly Earnings ($)", row=1, col=i+1)
+        fig.update_yaxes(title_text="Driver Name", row=1, col=i+1)
     fig.update_layout(
-        title="Weekly Driver Earnings vs Target by Trailer Type",
-        height=400 + 30 * max(5, df['DRIVER NAME'].nunique()),
-        margin=dict(t=80, l=200),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        title="Weekly Driver Earnings vs Target by Trailer Group (Tuesday-Monday Weeks)",
+        height=400 + 30 * max(5, weekly_earnings['DRIVER NAME'].nunique()),
+        margin=dict(t=80)
     )
     return fig
 
@@ -824,7 +736,7 @@ def plot_top_drivers_by_weekly_earnings_improved(weekly_earnings):
     return fig
 
 def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
-    """Bar chart: average % to target by trailer group, 100% line, with rate per mile text on bars."""
+    """Bar chart: average % to target by trailer group, 100% line."""
     import plotly.graph_objects as go
     targets = {
         'Flatbed/Stepdeck': 6000,
@@ -835,53 +747,14 @@ def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
         sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group]
         if not sub.empty:
             avg_pct = (sub['DRIVER RATE'].mean() / target) * 100
-            # Calculate rate per mile for this trailer group
-            # We need to find the miles column in the original data
-            miles_col = None
-            for col in sub.columns:
-                if 'miles' in col.lower() or 'mile' in col.lower():
-                    miles_col = col
-                    break
-            
-            if miles_col and miles_col in sub.columns:
-                # Calculate total miles and total driver rate for this group
-                total_miles = sub[miles_col].sum()
-                total_driver_rate = sub['DRIVER RATE'].sum()
-                if total_miles > 0:
-                    rate_per_mile = total_driver_rate / total_miles
-                else:
-                    rate_per_mile = 0
-            else:
-                rate_per_mile = 0
-            
-            achievement.append({
-                'Trailer Group': group, 
-                'Avg % to Target': avg_pct,
-                'Rate per Mile': rate_per_mile
-            })
-    
+            achievement.append({'Trailer Group': group, 'Avg % to Target': avg_pct})
     achievement_df = pd.DataFrame(achievement)
-    
-    # Create the bar chart
     fig = go.Figure(go.Bar(
         x=achievement_df['Trailer Group'],
         y=achievement_df['Avg % to Target'],
         marker_color='purple',
-        hovertemplate='<b>%{x}</b><br>Avg % to Target: %{y:.1f}%<br>Rate per Mile: $' + 
-                     achievement_df['Rate per Mile'].round(2).astype(str) + '<extra></extra>'
+        hovertemplate='<b>%{x}</b><br>Avg % to Target: %{y:.1f}%<extra></extra>'
     ))
-    
-    # Add text annotations on top of bars showing rate per mile
-    for i, row in achievement_df.iterrows():
-        fig.add_annotation(
-            x=row['Trailer Group'],
-            y=row['Avg % to Target'],
-            text=f"${row['Rate per Mile']:.2f}/mile",
-            showarrow=False,
-            yshift=10,
-            font=dict(size=12, color='white')
-        )
-    
     fig.add_hline(y=100, line_dash="dash", line_color="red", annotation_text="100% Target")
     fig.update_layout(
         title="Target Achievement by Trailer Group",
@@ -890,261 +763,6 @@ def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
         height=400,
         margin=dict(t=60)
     )
-    return fig
-
-def plot_weekly_driver_miles_vs_target_faceted(weekly_earnings, miles_col='FULL MILES TOTAL'):
-    """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=total miles, with color gradient based on miles target achievement."""
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    import numpy as np
-    import pandas as pd
-    
-    if miles_col not in weekly_earnings.columns:
-        return go.Figure().add_annotation(text="No miles data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    miles_target = 3000
-    df = weekly_earnings.copy()
-    df = df[df['DRIVER NAME'].notna() & (df['DRIVER NAME'].astype(str).str.strip() != '')].copy()
-    df['DRIVER NAME'] = df['DRIVER NAME'].astype(str)
-    
-    def parse_number(value):
-        import re
-        import pandas as pd
-        if pd.isna(value) or value == '':
-            return 0.0
-        value_str = str(value).strip()
-        value_str = re.sub(r'[^\d.,]', '', value_str)
-        if ',' in value_str:
-            value_str = value_str.replace(',', '')
-        try:
-            return float(value_str)
-        except ValueError:
-            return 0.0
-    df[miles_col] = df[miles_col].apply(parse_number)
-    miles_df = df.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER GROUP'])[miles_col].sum().reset_index()
-    miles_df['PERCENTAGE_TO_TARGET'] = (miles_df[miles_col] / miles_target * 100).round(1)
-    trailer_groups = miles_df['TRAILER GROUP'].dropna().unique().tolist()
-    n = len(trailer_groups)
-    if n == 0:
-        return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    fig = make_subplots(rows=1, cols=n, subplot_titles=trailer_groups, shared_yaxes=False)
-    for i, group in enumerate(trailer_groups):
-        sub = miles_df[miles_df['TRAILER GROUP'] == group].copy()
-        def get_color_category(percentage):
-            if percentage > 110:
-                return '💚 Overachievers (>110%)'
-            elif percentage >= 100:
-                return '🟢 On Target (100–110%)'
-            elif percentage >= 80:
-                return '🟡 Watchlist (80–99%)'
-            else:
-                return '🔴 Underperformers (<80%)'
-        sub['Color_Category'] = sub['PERCENTAGE_TO_TARGET'].apply(get_color_category)
-        color_map = {
-            '💚 Overachievers (>110%)': '#00FF00',
-            '🟢 On Target (100–110%)': '#90EE90',
-            '🟡 Watchlist (80–99%)': '#FFFF00',
-            '🔴 Underperformers (<80%)': '#FF0000'
-        }
-        # Sort by miles for consistent y-axis - INVERTED ORDER
-        sub = sub.sort_values(miles_col, ascending=True)
-        y_order = sub['DRIVER NAME'].tolist()
-        for category in color_map.keys():
-            category_data = sub[sub['Color_Category'] == category]
-            if not category_data.empty:
-                fig.add_trace(
-                    go.Bar(
-                        y=category_data['DRIVER NAME'],
-                        x=category_data[miles_col],
-                        orientation='h',
-                        name=category,
-                        marker_color=color_map[category],
-                        showlegend=(i == 0),
-                        hovertemplate='<b>%{y}</b><br>Miles: %{x:,.0f}<br>% to Target: ' + \
-                                    category_data['PERCENTAGE_TO_TARGET'].astype(str) + '%<extra></extra>'
-                    ),
-                    row=1, col=i+1
-                )
-        # Set y-axis order explicitly - INVERTED
-        fig.update_yaxes(categoryorder='array', categoryarray=y_order, row=1, col=i+1)
-        fig.add_vline(
-            x=miles_target,
-            line_dash="dot",
-            line_color="red",
-            annotation_text=f"Target ({miles_target:,})",
-            row=1, col=i+1
-        )
-        fig.update_xaxes(title_text="Weekly Miles", row=1, col=i+1)
-    fig.update_layout(
-        title="Weekly Driver Miles vs Target by Trailer Type",
-        height=400 + 30 * max(5, miles_df['DRIVER NAME'].nunique()),
-        margin=dict(t=80, l=200),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    return fig
-
-def plot_revenue_per_mile_per_dispatcher(df):
-    """Bar chart showing revenue per mile for each dispatcher."""
-    import plotly.graph_objects as go
-    import pandas as pd
-    
-    # Find the miles column
-    miles_col = None
-    for col in df.columns:
-        if 'miles' in col.lower() or 'mile' in col.lower():
-            miles_col = col
-            break
-    
-    if not miles_col or 'DISPATCH NAME' not in df.columns:
-        return go.Figure().add_annotation(text="No miles or dispatcher data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    # Calculate revenue per mile per dispatcher
-    dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-        'BROKER RATE (CFC)': 'sum',
-        miles_col: 'sum'
-    }).reset_index()
-    
-    # Calculate revenue per mile
-    dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics['BROKER RATE (CFC)'] / dispatcher_metrics[miles_col]).round(2)
-    
-    # Remove any infinite or NaN values
-    dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['REVENUE_PER_MILE'].notna() & (dispatcher_metrics['REVENUE_PER_MILE'] != float('inf'))]
-    
-    if dispatcher_metrics.empty:
-        return go.Figure().add_annotation(text="No valid revenue per mile data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    # Sort by revenue per mile
-    dispatcher_metrics = dispatcher_metrics.sort_values('REVENUE_PER_MILE', ascending=False)
-    
-    # Create color gradient based on revenue per mile
-    max_revenue = dispatcher_metrics['REVENUE_PER_MILE'].max()
-    min_revenue = dispatcher_metrics['REVENUE_PER_MILE'].min()
-    
-    colors = []
-    for revenue in dispatcher_metrics['REVENUE_PER_MILE']:
-        if max_revenue == min_revenue:
-            normalized = 0.5
-        else:
-            normalized = (revenue - min_revenue) / (max_revenue - min_revenue)
-        # Green to red gradient
-        colors.append(f'rgb({255 * (1 - normalized)}, {255 * normalized}, 0)')
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=dispatcher_metrics['DISPATCH NAME'],
-        y=dispatcher_metrics['REVENUE_PER_MILE'],
-        marker_color=colors,
-        hovertemplate='<b>%{x}</b><br>Revenue per Mile: $%{y:.2f}<br>Total Revenue: $' + 
-                     dispatcher_metrics['BROKER RATE (CFC)'].round(0).astype(str) + 
-                     '<br>Total Miles: ' + dispatcher_metrics[miles_col].round(0).astype(str) + 
-                     '<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Revenue per Mile by Dispatcher",
-        xaxis_title="Dispatcher",
-        yaxis_title="Revenue per Mile ($)",
-        height=400,
-        showlegend=False,
-        margin=dict(t=80, l=80, r=80, b=80)
-    )
-    
-    # Add a horizontal line for average
-    avg_revenue = dispatcher_metrics['REVENUE_PER_MILE'].mean()
-    fig.add_hline(
-        y=avg_revenue,
-        line_dash="dash",
-        line_color="gray",
-        annotation_text=f"Average: ${avg_revenue:.2f}",
-        annotation_position="top right"
-    )
-    
-    return fig
-
-def plot_driver_revenue_per_mile_per_dispatcher(df):
-    """Bar chart showing driver revenue per mile for each dispatcher."""
-    import plotly.graph_objects as go
-    import pandas as pd
-    
-    # Find the miles column
-    miles_col = None
-    for col in df.columns:
-        if 'miles' in col.lower() or 'mile' in col.lower():
-            miles_col = col
-            break
-    
-    if not miles_col or 'DISPATCH NAME' not in df.columns:
-        return go.Figure().add_annotation(text="No miles or dispatcher data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    # Calculate driver revenue per mile per dispatcher
-    dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-        'DRIVER RATE': 'sum',
-        miles_col: 'sum'
-    }).reset_index()
-    
-    # Calculate driver revenue per mile
-    dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics['DRIVER RATE'] / dispatcher_metrics[miles_col]).round(2)
-    
-    # Remove any infinite or NaN values
-    dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].notna() & (dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] != float('inf'))]
-    
-    if dispatcher_metrics.empty:
-        return go.Figure().add_annotation(text="No valid driver revenue per mile data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    # Sort by driver revenue per mile
-    dispatcher_metrics = dispatcher_metrics.sort_values('DRIVER_REVENUE_PER_MILE', ascending=False)
-    
-    # Create color gradient based on driver revenue per mile
-    max_revenue = dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].max()
-    min_revenue = dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].min()
-    
-    colors = []
-    for revenue in dispatcher_metrics['DRIVER_REVENUE_PER_MILE']:
-        if max_revenue == min_revenue:
-            normalized = 0.5
-        else:
-            normalized = (revenue - min_revenue) / (max_revenue - min_revenue)
-        # Blue to purple gradient for driver revenue
-        colors.append(f'rgb({100 + 155 * normalized}, {100 + 155 * normalized}, {255})')
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=dispatcher_metrics['DISPATCH NAME'],
-        y=dispatcher_metrics['DRIVER_REVENUE_PER_MILE'],
-        marker_color=colors,
-        hovertemplate='<b>%{x}</b><br>Driver Revenue per Mile: $%{y:.2f}<br>Total Driver Pay: $' + 
-                     dispatcher_metrics['DRIVER RATE'].round(0).astype(str) + 
-                     '<br>Total Miles: ' + dispatcher_metrics[miles_col].round(0).astype(str) + 
-                     '<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Driver Revenue per Mile by Dispatcher",
-        xaxis_title="Dispatcher",
-        yaxis_title="Driver Revenue per Mile ($)",
-        height=400,
-        showlegend=False,
-        margin=dict(t=80, l=80, r=80, b=80)
-    )
-    
-    # Add a horizontal line for average
-    avg_revenue = dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].mean()
-    fig.add_hline(
-        y=avg_revenue,
-        line_dash="dash",
-        line_color="gray",
-        annotation_text=f"Average: ${avg_revenue:.2f}",
-        annotation_position="top right"
-    )
-    
     return fig
 
 def generate_chart_analysis(chart_type, df, chart_data=None):
@@ -1492,233 +1110,4 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         - Monitor trailer type performance for capacity planning
         """
     
-    elif chart_type == "revenue_per_mile_dispatcher":
-        # Analysis for Revenue per Mile per Dispatcher
-        # Find the miles column
-        miles_col = None
-        for col in df.columns:
-            if 'miles' in col.lower() or 'mile' in col.lower():
-                miles_col = col
-                break
-        
-        if not miles_col or 'DISPATCH NAME' not in df.columns:
-            analysis = "**📊 Revenue per Mile per Dispatcher Analysis**\n\nMiles or dispatcher data not available for analysis."
-            return analysis
-        
-        dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-            'BROKER RATE (CFC)': 'sum',
-            miles_col: 'sum'
-        }).reset_index()
-        
-        dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics['BROKER RATE (CFC)'] / dispatcher_metrics[miles_col]).round(2)
-        dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['REVENUE_PER_MILE'].notna() & (dispatcher_metrics['REVENUE_PER_MILE'] != float('inf'))]
-        
-        if dispatcher_metrics.empty:
-            analysis = "**📊 Revenue per Mile per Dispatcher Analysis**\n\nNo valid revenue per mile data available for analysis."
-            return analysis
-        
-        top_dispatcher = dispatcher_metrics.loc[dispatcher_metrics['REVENUE_PER_MILE'].idxmax()]
-        avg_revenue_per_mile = dispatcher_metrics['REVENUE_PER_MILE'].mean()
-        total_revenue = dispatcher_metrics['BROKER RATE (CFC)'].sum()
-        total_miles = dispatcher_metrics[miles_col].sum()
-        
-        analysis = f"""
-        **📊 Revenue per Mile per Dispatcher Analysis**
-        
-        **Key Findings:**
-        - **Top Performer**: {top_dispatcher['DISPATCH NAME']} (${top_dispatcher['REVENUE_PER_MILE']:.2f}/mile)
-        - **Average Revenue per Mile**: ${avg_revenue_per_mile:.2f}
-        - **Total Revenue**: ${total_revenue:,.0f}
-        - **Total Miles**: {total_miles:,.0f} miles
-        - **Active Dispatchers**: {len(dispatcher_metrics)} dispatchers
-        
-        **Business Insights:**
-        - {top_dispatcher['DISPATCH NAME']} generates the highest revenue per mile
-        - Average revenue per mile is ${avg_revenue_per_mile:.2f}
-        - Consider sharing best practices from top performers
-        - Monitor dispatcher efficiency and route optimization
-        - Focus on high-value loads and optimal pricing strategies
-        """
-    
-    elif chart_type == "driver_revenue_per_mile_dispatcher":
-        # Analysis for Driver Revenue per Mile per Dispatcher
-        # Find the miles column
-        miles_col = None
-        for col in df.columns:
-            if 'miles' in col.lower() or 'mile' in col.lower():
-                miles_col = col
-                break
-        
-        if not miles_col or 'DISPATCH NAME' not in df.columns:
-            analysis = "**📊 Driver Revenue per Mile per Dispatcher Analysis**\n\nMiles or dispatcher data not available for analysis."
-            return analysis
-        
-        dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-            'DRIVER RATE': 'sum',
-            miles_col: 'sum'
-        }).reset_index()
-        
-        dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics['DRIVER RATE'] / dispatcher_metrics[miles_col]).round(2)
-        dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].notna() & (dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] != float('inf'))]
-        
-        if dispatcher_metrics.empty:
-            analysis = "**📊 Driver Revenue per Mile per Dispatcher Analysis**\n\nNo valid driver revenue per mile data available for analysis."
-            return analysis
-        
-        top_dispatcher = dispatcher_metrics.loc[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].idxmax()]
-        avg_driver_revenue_per_mile = dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].mean()
-        total_driver_pay = dispatcher_metrics['DRIVER RATE'].sum()
-        total_miles = dispatcher_metrics[miles_col].sum()
-        
-        analysis = f"""
-        **📊 Driver Revenue per Mile per Dispatcher Analysis**
-        
-        **Key Findings:**
-        - **Top Performer**: {top_dispatcher['DISPATCH NAME']} (${top_dispatcher['DRIVER_REVENUE_PER_MILE']:.2f}/mile)
-        - **Average Driver Revenue per Mile**: ${avg_driver_revenue_per_mile:.2f}
-        - **Total Driver Pay**: ${total_driver_pay:,.0f}
-        - **Total Miles**: {total_miles:,.0f} miles
-        - **Active Dispatchers**: {len(dispatcher_metrics)} dispatchers
-        
-        **Business Insights:**
-        - {top_dispatcher['DISPATCH NAME']} pays drivers the highest rate per mile
-        - Average driver revenue per mile is ${avg_driver_revenue_per_mile:.2f}
-        - Monitor driver compensation fairness across dispatchers
-        - Consider driver retention strategies for high-paying dispatchers
-        - Balance driver pay with company profitability
-        """
-    
     return analysis 
-
-def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col='FULL MILES TOTAL'):
-    """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=revenue per mile, with color gradient based on target achievement."""
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    import numpy as np
-    import pandas as pd
-    
-    if miles_col not in weekly_earnings.columns:
-        return go.Figure().add_annotation(text="No miles data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    # Revenue per mile targets (example targets - adjust as needed)
-    revenue_per_mile_targets = {
-        'Flatbed/Stepdeck': 2.0,  # $2.00 per mile target
-        'Dry Van/Reefer/Power Only': 1.8  # $1.80 per mile target
-    }
-    
-    df = weekly_earnings.copy()
-    df = df[df['DRIVER NAME'].notna() & (df['DRIVER NAME'].astype(str).str.strip() != '')].copy()
-    df['DRIVER NAME'] = df['DRIVER NAME'].astype(str)
-    
-    def parse_number(value):
-        import re
-        import pandas as pd
-        if pd.isna(value) or value == '':
-            return 0.0
-        value_str = str(value).strip()
-        value_str = re.sub(r'[^\d.,]', '', value_str)
-        if ',' in value_str:
-            value_str = value_str.replace(',', '')
-        try:
-            return float(value_str)
-        except ValueError:
-            return 0.0
-    
-    df[miles_col] = df[miles_col].apply(parse_number)
-    
-    # Calculate revenue per mile
-    df['REVENUE_PER_MILE'] = np.where(df[miles_col] > 0, df['DRIVER RATE'] / df[miles_col], 0)
-    
-    # Group by driver, week, and trailer group
-    revenue_df = df.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER GROUP']).agg({
-        'DRIVER RATE': 'sum',
-        miles_col: 'sum'
-    }).reset_index()
-    
-    # Calculate revenue per mile for grouped data
-    revenue_df['REVENUE_PER_MILE'] = np.where(revenue_df[miles_col] > 0, 
-                                             revenue_df['DRIVER RATE'] / revenue_df[miles_col], 0)
-    
-    # Calculate percentage to target
-    def get_target_for_group(group):
-        return revenue_per_mile_targets.get(group, 1.8)  # Default to 1.8 if group not found
-    
-    revenue_df['TARGET'] = revenue_df['TRAILER GROUP'].apply(get_target_for_group)
-    revenue_df['PERCENTAGE_TO_TARGET'] = (revenue_df['REVENUE_PER_MILE'] / revenue_df['TARGET'] * 100).round(1)
-    
-    trailer_groups = revenue_df['TRAILER GROUP'].dropna().unique().tolist()
-    n = len(trailer_groups)
-    if n == 0:
-        return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
-    
-    fig = make_subplots(rows=1, cols=n, subplot_titles=trailer_groups, shared_yaxes=False)
-    
-    for i, group in enumerate(trailer_groups):
-        sub = revenue_df[revenue_df['TRAILER GROUP'] == group].copy()
-        
-        def get_color_category(percentage):
-            if percentage > 110:
-                return '💚 Overachievers (>110%)'
-            elif percentage >= 100:
-                return '🟢 On Target (100–110%)'
-            elif percentage >= 80:
-                return '🟡 Watchlist (80–99%)'
-            else:
-                return '🔴 Underperformers (<80%)'
-        
-        sub['Color_Category'] = sub['PERCENTAGE_TO_TARGET'].apply(get_color_category)
-        color_map = {
-            '💚 Overachievers (>110%)': '#00FF00',
-            '🟢 On Target (100–110%)': '#90EE90',
-            '🟡 Watchlist (80–99%)': '#FFFF00',
-            '🔴 Underperformers (<80%)': '#FF0000'
-        }
-        
-        # Sort by revenue per mile for consistent y-axis - INVERTED ORDER
-        sub = sub.sort_values('REVENUE_PER_MILE', ascending=True)
-        y_order = sub['DRIVER NAME'].tolist()
-        
-        for category in color_map.keys():
-            category_data = sub[sub['Color_Category'] == category]
-            if not category_data.empty:
-                fig.add_trace(
-                    go.Bar(
-                        y=category_data['DRIVER NAME'],
-                        x=category_data['REVENUE_PER_MILE'],
-                        orientation='h',
-                        name=category,
-                        marker_color=color_map[category],
-                        showlegend=(i == 0),
-                        hovertemplate='<b>%{y}</b><br>Revenue per Mile: $%{x:.2f}<br>% to Target: ' + \
-                                    category_data['PERCENTAGE_TO_TARGET'].astype(str) + '%<extra></extra>'
-                    ),
-                    row=1, col=i+1
-                )
-        
-        # Set y-axis order explicitly - INVERTED
-        fig.update_yaxes(categoryorder='array', categoryarray=y_order, row=1, col=i+1)
-        
-        # Add target line
-        target_value = revenue_per_mile_targets.get(group, 1.8)
-        fig.add_vline(
-            x=target_value,
-            line_dash="dot",
-            line_color="red",
-            annotation_text=f"Target (${target_value:.2f})",
-            row=1, col=i+1
-        )
-        fig.update_xaxes(title_text="Revenue per Mile ($)", row=1, col=i+1)
-    
-    fig.update_layout(
-        title="Weekly Driver Revenue per Mile vs Target by Trailer Type",
-        height=400 + 30 * max(5, revenue_df['DRIVER NAME'].nunique()),
-        margin=dict(t=80, l=200),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    return fig
