@@ -43,7 +43,7 @@ class MonthlyOpsReview:
         
     def parse_numeric_columns(self):
         """Parse numeric columns that might have formatting issues."""
-        numeric_columns = ['BROKER RATE (CFC)', 'BROKER RATE', 'BD MARGIN', 'DRIVER RATE']
+        numeric_columns = ['BROKER RATE (FC) [$', 'BROKER RATE', 'BD MARGIN', 'DRIVER RATE [$] [$]']
         
         for col in numeric_columns:
             if col in self.df.columns:
@@ -80,6 +80,17 @@ class MonthlyOpsReview:
             (self.df['Month'] == report_month.month)
         ].copy()
         
+        # Exclude CANCELLED, N/A loads, and Unpaid - Claim billing status
+        if 'LOAD STATUS' in current_month_data.columns:
+            current_month_data = current_month_data[
+                ~current_month_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in current_month_data.columns:
+            current_month_data = current_month_data[
+                ~current_month_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
         return current_month_data, report_month
     
     def get_yoy_comparison_data(self, current_month, current_year):
@@ -96,6 +107,27 @@ class MonthlyOpsReview:
             (self.df['Month'] == current_month)
         ].copy()
         
+        # Exclude CANCELLED, N/A loads, and Unpaid - Claim billing status from both datasets
+        if 'LOAD STATUS' in current_year_data.columns:
+            current_year_data = current_year_data[
+                ~current_year_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in current_year_data.columns:
+            current_year_data = current_year_data[
+                ~current_year_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
+        if 'LOAD STATUS' in previous_year_data.columns:
+            previous_year_data = previous_year_data[
+                ~previous_year_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in previous_year_data.columns:
+            previous_year_data = previous_year_data[
+                ~previous_year_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
         return current_year_data, previous_year_data
     
     def plot_yoy_billing_margin_comparison(self):
@@ -106,12 +138,12 @@ class MonthlyOpsReview:
         )
         
         # Calculate metrics for ALL dispatchers (not just common ones)
-        current_billing = current_year_data['BROKER RATE (CFC)'].sum() if 'BROKER RATE (CFC)' in current_year_data.columns else 0
+        current_billing = current_year_data['BROKER RATE (FC) [$'].sum() if 'BROKER RATE (FC) [$' in current_year_data.columns else 0
         current_margin = current_year_data['BD MARGIN'].sum() if 'BD MARGIN' in current_year_data.columns else 0
         current_loads = len(current_year_data)
         current_avg_per_load = current_billing / current_loads if current_loads > 0 else 0
         
-        previous_billing = previous_year_data['BROKER RATE (CFC)'].sum() if 'BROKER RATE (CFC)' in previous_year_data.columns else 0
+        previous_billing = previous_year_data['BROKER RATE (FC) [$'].sum() if 'BROKER RATE (FC) [$' in previous_year_data.columns else 0
         previous_margin = previous_year_data['BD MARGIN'].sum() if 'BD MARGIN' in previous_year_data.columns else 0
         previous_loads = len(previous_year_data)
         previous_avg_per_load = previous_billing / previous_loads if previous_loads > 0 else 0
@@ -179,12 +211,23 @@ class MonthlyOpsReview:
             (self.df['Month'] <= report_month.month)
         ].copy()
         
+        # Exclude CANCELLED, N/A loads, and Unpaid - Claim billing status
+        if 'LOAD STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
         if evolution_data.empty:
             return pd.DataFrame(), report_month
         
         # Group by dispatcher and month
         monthly_stats = evolution_data.groupby(['DISPATCH NAME', 'Month']).agg({
-            'BROKER RATE (CFC)': 'sum',
+            'BROKER RATE (FC) [$': 'sum',
             'BD MARGIN': 'sum'
         }).reset_index()
         
@@ -213,7 +256,7 @@ class MonthlyOpsReview:
         for i, dispatcher in enumerate(dispatchers_to_show):
             dispatcher_data = filtered_stats[filtered_stats['DISPATCH NAME'] == dispatcher].copy()
             if not dispatcher_data.empty:
-                dispatcher_data['BillingMinusMargin'] = dispatcher_data['BROKER RATE (CFC)'] - dispatcher_data['BD MARGIN']
+                dispatcher_data['BillingMinusMargin'] = dispatcher_data['BROKER RATE (FC) [$'] - dispatcher_data['BD MARGIN']
                 # X-axis: month, but use offsetgroup to group bars by dispatcher
                 fig.add_trace(
                     go.Bar(
@@ -236,7 +279,7 @@ class MonthlyOpsReview:
                         y=dispatcher_data['BillingMinusMargin'],
                         name=f'{dispatcher} - Billing',
                         marker_color=colors[i % len(colors)],
-                        text=dispatcher_data['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.0f}'),
+                        text=dispatcher_data['BROKER RATE (FC) [$'].apply(lambda x: f'${x:,.0f}'),
                         textposition='outside',
                         textfont=dict(size=10),
                         opacity=0.8,
@@ -279,7 +322,7 @@ class MonthlyOpsReview:
         
         # Group by dispatcher
         dispatcher_stats = current_month_data.groupby('DISPATCH NAME').agg({
-            'BROKER RATE (CFC)': 'sum',
+            'BROKER RATE (FC) [$': 'sum',
             'BD MARGIN': 'sum'
         }).reset_index()
         
@@ -288,20 +331,36 @@ class MonthlyOpsReview:
         dispatcher_stats = dispatcher_stats.merge(load_counts, on='DISPATCH NAME')
         
         # Sort by billing
-        dispatcher_stats = dispatcher_stats.sort_values('BROKER RATE (CFC)', ascending=False)
+        dispatcher_stats = dispatcher_stats.sort_values('BROKER RATE (FC) [$', ascending=False)
         
         # Create figure with secondary y-axis
         fig = go.Figure()
         
-        # Add billing bars
+        # Add BD Margin bars (stacked under billing)
         fig.add_trace(
             go.Bar(
                 x=dispatcher_stats['DISPATCH NAME'],
-                y=dispatcher_stats['BROKER RATE (CFC)'],
-                name='Billing',
-                marker_color='lightblue',
-                text=dispatcher_stats['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.0f}'),
+                y=dispatcher_stats['BD MARGIN'],
+                name='BD Margin',
+                marker_color='#C70039',
+                text=dispatcher_stats['BD MARGIN'].apply(lambda x: f'${x:,.0f}'),
+                textposition='inside',
+                textfont=dict(color='white', size=10),
+                yaxis='y'
+            )
+        )
+        
+        # Add billing bars (remaining amount after BD Margin)
+        remaining_billing = dispatcher_stats['BROKER RATE (FC) [$'] - dispatcher_stats['BD MARGIN']
+        fig.add_trace(
+            go.Bar(
+                x=dispatcher_stats['DISPATCH NAME'],
+                y=remaining_billing,
+                name='Billing (Net)',
+                marker_color='#FFC300',
+                text=dispatcher_stats['BROKER RATE (FC) [$'].apply(lambda x: f'${x:,.0f}'),
                 textposition='outside',
+                textfont=dict(size=10),
                 yaxis='y'
             )
         )
@@ -313,7 +372,7 @@ class MonthlyOpsReview:
                 y=dispatcher_stats['Load Count'],
                 mode='lines+markers',
                 name='Load Count',
-                line=dict(color='red', width=3),
+                line=dict(color='#2E86AB', width=3),
                 marker=dict(size=8),
                 text=dispatcher_stats['Load Count'],
                 textposition='top center',
@@ -328,6 +387,7 @@ class MonthlyOpsReview:
             yaxis2=dict(title="Load Count", side="right", overlaying="y"),
             template='plotly_white',
             showlegend=True,
+            barmode='stack',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -349,6 +409,17 @@ class MonthlyOpsReview:
             (self.df['Month'] <= report_month.month)
         ].copy()
         
+        # Exclude CANCELLED, N/A loads, and Unpaid - Claim billing status
+        if 'LOAD STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
         if evolution_data.empty or 'LOAD\'S CARRIER COMPANY' not in evolution_data.columns:
             return go.Figure().add_annotation(
                 text="No data available for load carrier evolution", 
@@ -357,27 +428,30 @@ class MonthlyOpsReview:
         
         # Group by load carrier and month
         monthly_stats = evolution_data.groupby(['LOAD\'S CARRIER COMPANY', 'Month']).agg({
-            'BROKER RATE (CFC)': 'sum'
+            'BROKER RATE (FC) [$': 'sum'
         }).reset_index()
         
         # Get top 10 carriers by total billing
-        top_carriers = evolution_data.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (CFC)'].sum().nlargest(10).index
+        top_carriers = evolution_data.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (FC) [$'].sum().nlargest(10).index
         
         # Filter for top carriers
         monthly_stats = monthly_stats[monthly_stats['LOAD\'S CARRIER COMPANY'].isin(top_carriers)]
         
         # Calculate total billing per month for annotations
-        monthly_totals = evolution_data.groupby('Month')['BROKER RATE (CFC)'].sum().reset_index()
-        monthly_totals = monthly_totals.rename(columns={'BROKER RATE (CFC)': 'Total_Billing'})
+        monthly_totals = evolution_data.groupby('Month')['BROKER RATE (FC) [$'].sum().reset_index()
+        monthly_totals = monthly_totals.rename(columns={'BROKER RATE (FC) [$': 'Total_Billing'})
+        
+        # Calculate total billing up to date (sum of all months)
+        total_billing_up_to_date = monthly_totals['Total_Billing'].sum()
         
         # Create stacked bar chart
         fig = px.bar(
             monthly_stats,
             x='Month',
-            y='BROKER RATE (CFC)',
+            y='BROKER RATE (FC) [$',
             color='LOAD\'S CARRIER COMPANY',
             title=f'Load Carrier Monthly Billing Evolution: January - {report_month.strftime("%B %Y")}',
-            labels={'BROKER RATE (CFC)': 'Billing ($)', 'LOAD\'S CARRIER COMPANY': 'Load Carrier'},
+            labels={'BROKER RATE (FC) [$': 'Billing ($)', 'LOAD\'S CARRIER COMPANY': 'Load Carrier'},
             barmode='stack'
         )
         
@@ -396,13 +470,143 @@ class MonthlyOpsReview:
                 yshift=10
             )
         
+        # Add total billing up to date annotation below the X-axis
+        fig.add_annotation(
+            x=0.5,
+            y=-0.15,
+            xref='paper',
+            yref='paper',
+            text=f'<b>Total Billing Up to Date: ${total_billing_up_to_date:,.0f}</b>',
+            showarrow=False,
+            font=dict(color='white', size=14, weight='bold'),
+            bgcolor='black',
+            align='center'
+        )
+        
         fig.update_layout(
-            height=500,
+            height=550,  # Increased height to accommodate the annotation
             template='plotly_white',
             xaxis=dict(
                 ticktext=[calendar.month_abbr[m] for m in sorted(monthly_stats['Month'].unique())],
                 tickvals=sorted(monthly_stats['Month'].unique())
+            ),
+            margin=dict(b=80)  # Add bottom margin for the annotation
+        )
+        
+        return fig
+    
+    def plot_load_carrier_weekly_evolution(self):
+        """4.5. Load Carrier Weekly Billing Evolution (Current Month)."""
+        current_month_data, report_month = self.get_current_month_data()
+        
+        if current_month_data.empty or 'LOAD\'S CARRIER COMPANY' not in current_month_data.columns:
+            return go.Figure().add_annotation(
+                text="No data available for load carrier weekly evolution", 
+                xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
             )
+        
+        # Define week boundaries (Tuesday to Monday)
+        def get_week_start_end(date):
+            """Get the Tuesday-Monday week boundaries for a given date."""
+            # Find the most recent Tuesday (week starts on Tuesday)
+            days_since_tuesday = (date.weekday() - 1) % 7  # Tuesday is 1
+            week_start = date - timedelta(days=days_since_tuesday)
+            week_end = week_start + timedelta(days=6)  # Monday is 6 days after Tuesday
+            return week_start, week_end
+        
+        # Get the first and last day of the current month
+        first_day = report_month.replace(day=1)
+        last_day = (report_month.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        
+        # Get the first Tuesday of the month (or the Tuesday of the week containing the first day)
+        first_week_start, first_week_end = get_week_start_end(first_day)
+        
+        # Get the last Monday of the month (or the Monday of the week containing the last day)
+        last_week_start, last_week_end = get_week_start_end(last_day)
+        
+        # Create weekly periods for the current month
+        weekly_periods = []
+        current_week_start = first_week_start
+        
+        while current_week_start <= last_week_end:
+            current_week_end = current_week_start + timedelta(days=6)
+            weekly_periods.append({
+                'week_start': current_week_start,
+                'week_end': current_week_end,
+                'week_label': f"{current_week_start.strftime('%m/%d')} - {current_week_end.strftime('%m/%d')}"
+            })
+            current_week_start += timedelta(days=7)
+        
+        # Filter data for loads delivered within the weekly periods
+        weekly_data = []
+        for period in weekly_periods:
+            week_data = current_month_data[
+                (current_month_data['DELIVERY DATE'] >= period['week_start']) &
+                (current_month_data['DELIVERY DATE'] <= period['week_end'])
+            ].copy()
+            
+            if not week_data.empty:
+                # Group by load carrier for this week
+                week_stats = week_data.groupby('LOAD\'S CARRIER COMPANY').agg({
+                    'BROKER RATE (FC) [$': 'sum'
+                }).reset_index()
+                week_stats['week_label'] = period['week_label']
+                week_stats['week_start'] = period['week_start']
+                weekly_data.append(week_stats)
+        
+        if not weekly_data:
+            return go.Figure().add_annotation(
+                text="No data available for the specified weekly periods", 
+                xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+            )
+        
+        # Combine all weekly data
+        all_weekly_data = pd.concat(weekly_data, ignore_index=True)
+        
+        # Get top 8 carriers by total billing across all weeks
+        top_carriers = all_weekly_data.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (FC) [$'].sum().nlargest(8).index
+        
+        # Filter for top carriers
+        filtered_weekly_data = all_weekly_data[all_weekly_data['LOAD\'S CARRIER COMPANY'].isin(top_carriers)]
+        
+        # Calculate total billing per week for annotations
+        weekly_totals = all_weekly_data.groupby('week_label')['BROKER RATE (FC) [$'].sum().reset_index()
+        weekly_totals = weekly_totals.rename(columns={'BROKER RATE (FC) [$': 'Total_Billing'})
+        
+        # Create stacked bar chart
+        fig = px.bar(
+            filtered_weekly_data,
+            x='week_label',
+            y='BROKER RATE (FC) [$',
+            color='LOAD\'S CARRIER COMPANY',
+            title=f'Load Carrier Weekly Billing Evolution: {report_month.strftime("%B %Y")} (Tuesday-Monday Weeks)',
+            labels={'BROKER RATE (FC) [$': 'Billing ($)', 'LOAD\'S CARRIER COMPANY': 'Load Carrier', 'week_label': 'Week Period'},
+            barmode='stack'
+        )
+        
+        # Add total billing annotations on top of each bar
+        for week_label in weekly_totals['week_label']:
+            total_billing = weekly_totals[weekly_totals['week_label'] == week_label]['Total_Billing'].iloc[0]
+            fig.add_annotation(
+                x=week_label,
+                y=total_billing,
+                text=f'${total_billing:,.0f}',
+                showarrow=False,
+                font=dict(color='white', size=10, weight='bold'),
+                bgcolor='rgba(0,0,0,0.6)',
+                bordercolor='white',
+                borderwidth=1,
+                yshift=8
+            )
+        
+        fig.update_layout(
+            height=500,
+            template='plotly_white',
+            xaxis=dict(
+                title="Week Period (Tuesday-Monday)",
+                tickangle=45
+            ),
+            yaxis=dict(title="Billing ($)")
         )
         
         return fig
@@ -417,6 +621,17 @@ class MonthlyOpsReview:
             (self.df['Month'] <= report_month.month)
         ].copy()
         
+        # Exclude CANCELLED, N/A loads, and Unpaid - Claim billing status
+        if 'LOAD STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['LOAD STATUS'].str.upper().isin(['CANCELLED', 'N/A', 'NA'])
+            ].copy()
+        
+        if 'BILLING STATUS' in evolution_data.columns:
+            evolution_data = evolution_data[
+                ~evolution_data['BILLING STATUS'].str.contains('Unpaid - Claim', case=False, na=False)
+            ].copy()
+        
         if evolution_data.empty or 'DRIVER\'S CARRIER COMPANY' not in evolution_data.columns:
             return go.Figure().add_annotation(
                 text="No data available for franchise carrier evolution", 
@@ -425,11 +640,11 @@ class MonthlyOpsReview:
         
         # Group by franchise carrier and month
         monthly_stats = evolution_data.groupby(['DRIVER\'S CARRIER COMPANY', 'Month']).agg({
-            'BROKER RATE (CFC)': 'sum'
+            'BROKER RATE (FC) [$': 'sum'
         }).reset_index()
         
         # Get top 10 carriers by total billing
-        top_carriers = evolution_data.groupby('DRIVER\'S CARRIER COMPANY')['BROKER RATE (CFC)'].sum().nlargest(10).index
+        top_carriers = evolution_data.groupby('DRIVER\'S CARRIER COMPANY')['BROKER RATE (FC) [$'].sum().nlargest(10).index
         
         # Filter for top carriers
         monthly_stats = monthly_stats[monthly_stats['DRIVER\'S CARRIER COMPANY'].isin(top_carriers)]
@@ -438,10 +653,10 @@ class MonthlyOpsReview:
         fig = px.bar(
             monthly_stats,
             x='Month',
-            y='BROKER RATE (CFC)',
+            y='BROKER RATE (FC) [$',
             color='DRIVER\'S CARRIER COMPANY',
             title=f'Franchise Carrier Monthly Billing Evolution: January - {report_month.strftime("%B %Y")}',
-            labels={'BROKER RATE (CFC)': 'Billing ($)', 'DRIVER\'S CARRIER COMPANY': 'Franchise Carrier'},
+            labels={'BROKER RATE (FC) [$': 'Billing ($)', 'DRIVER\'S CARRIER COMPANY': 'Franchise Carrier'},
             barmode='group'
         )
         
@@ -468,7 +683,7 @@ class MonthlyOpsReview:
         
         # Group by trailer type
         trailer_stats = current_month_data.groupby('TRAILER TYPE').agg({
-            'BROKER RATE (CFC)': 'sum'
+            'BROKER RATE (FC) [$': 'sum'
         }).reset_index()
         
         # Add load count
@@ -476,7 +691,7 @@ class MonthlyOpsReview:
         trailer_stats = trailer_stats.merge(load_counts, on='TRAILER TYPE')
         
         # Sort by billing
-        trailer_stats = trailer_stats.sort_values('BROKER RATE (CFC)', ascending=False)
+        trailer_stats = trailer_stats.sort_values('BROKER RATE (FC) [$', ascending=False)
         
         # Create figure with secondary y-axis
         fig = go.Figure()
@@ -485,10 +700,10 @@ class MonthlyOpsReview:
         fig.add_trace(
             go.Bar(
                 x=trailer_stats['TRAILER TYPE'],
-                y=trailer_stats['BROKER RATE (CFC)'],
+                y=trailer_stats['BROKER RATE (FC) [$'],
                 name='Billing',
                 marker_color='lightgreen',
-                text=trailer_stats['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.0f}'),
+                text=trailer_stats['BROKER RATE (FC) [$'].apply(lambda x: f'${x:,.0f}'),
                 textposition='outside',
                 yaxis='y'
             )
@@ -535,7 +750,7 @@ class MonthlyOpsReview:
             return "No data available for the current month."
         
         # Calculate key metrics
-        total_billing = current_month_data['BROKER RATE (CFC)'].sum() if 'BROKER RATE (CFC)' in current_month_data.columns else 0
+        total_billing = current_month_data['BROKER RATE (FC) [$'].sum() if 'BROKER RATE (FC) [$' in current_month_data.columns else 0
         total_margin = current_month_data['BD MARGIN'].sum() if 'BD MARGIN' in current_month_data.columns else 0
         total_loads = len(current_month_data)
         margin_percentage = (total_margin / total_billing * 100) if total_billing > 0 else 0
@@ -549,7 +764,7 @@ class MonthlyOpsReview:
             (self.df['Month'] == prev_month.month)
         ].copy()
         
-        prev_billing = prev_month_data['BROKER RATE (CFC)'].sum() if 'BROKER RATE (CFC)' in prev_month_data.columns else 0
+        prev_billing = prev_month_data['BROKER RATE (FC) [$'].sum() if 'BROKER RATE (FC) [$' in prev_month_data.columns else 0
         prev_margin = prev_month_data['BD MARGIN'].sum() if 'BD MARGIN' in prev_month_data.columns else 0
         prev_loads = len(prev_month_data)
         
@@ -559,8 +774,8 @@ class MonthlyOpsReview:
         load_change = ((total_loads - prev_loads) / prev_loads * 100) if prev_loads > 0 else 0
         
         # Top performers
-        top_dispatcher = current_month_data.groupby('DISPATCH NAME')['BROKER RATE (CFC)'].sum().idxmax() if 'DISPATCH NAME' in current_month_data.columns else "N/A"
-        top_carrier = current_month_data.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (CFC)'].sum().idxmax() if 'LOAD\'S CARRIER COMPANY' in current_month_data.columns else "N/A"
+        top_dispatcher = current_month_data.groupby('DISPATCH NAME')['BROKER RATE (FC) [$'].sum().idxmax() if 'DISPATCH NAME' in current_month_data.columns else "N/A"
+        top_carrier = current_month_data.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (FC) [$'].sum().idxmax() if 'LOAD\'S CARRIER COMPANY' in current_month_data.columns else "N/A"
         
         summary = f"""
 ## 📊 Monthly Operations Review Summary: {report_month.strftime("%B %Y")}
@@ -594,6 +809,7 @@ class MonthlyOpsReview:
             'dispatcher_evolution': self.plot_dispatcher_monthly_evolution(selected_dispatchers),
             'dispatcher_billing_loads': self.plot_dispatcher_billing_vs_load_volume(),
             'load_carrier_evolution': self.plot_load_carrier_monthly_evolution(),
+            'load_carrier_weekly_evolution': self.plot_load_carrier_weekly_evolution(),
             'franchise_carrier_evolution': self.plot_franchise_carrier_monthly_evolution(),
             'trailer_performance': self.plot_trailer_type_performance()
         }
@@ -657,6 +873,7 @@ class MonthlyOpsReview:
             'dispatcher_evolution': '📈 Dispatcher Monthly Billing and Margin Evolution',
             'dispatcher_billing_loads': '📉 Dispatcher Billing vs Load Volume',
             'load_carrier_evolution': '📦 Load Carrier Monthly Billing Evolution',
+            'load_carrier_weekly_evolution': '📅 Load Carrier Weekly Billing Evolution',
             'franchise_carrier_evolution': '🚛 Franchise Carrier Monthly Billing Evolution',
             'trailer_performance': '🔄 Trailer Type Performance Analysis'
         }
@@ -708,7 +925,7 @@ def create_monthly_ops_review_app():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+
     # Display header with logo
     logo_base64 = get_logo_base64()
     if logo_base64:
@@ -733,14 +950,15 @@ def create_monthly_ops_review_app():
         )
     st.title("📊 Monthly Operations Review Dashboard")
     st.markdown("Comprehensive freight operations analysis with YoY comparisons and monthly evolution tracking")
-    
-    # File upload
-    uploaded_file = st.file_uploader(
+
+    # File upload in sidebar
+    st.sidebar.header("📁 Data Upload")
+    uploaded_file = st.sidebar.file_uploader(
         "Upload your freight data CSV file",
         type=['csv'],
-        help="Upload a CSV file with columns like DISPATCH NAME, BROKER RATE (CFC), BD MARGIN, etc."
+        help="Upload a CSV file with columns like DISPATCH NAME, BROKER RATE (FC) [$, BD MARGIN, etc."
     )
-    
+
     if uploaded_file is not None:
         try:
             # Load data
@@ -805,6 +1023,11 @@ def create_monthly_ops_review_app():
             load_carrier_fig = dashboard.plot_load_carrier_monthly_evolution()
             st.plotly_chart(load_carrier_fig, use_container_width=True)
             
+            # Load Carrier Weekly Evolution
+            st.markdown("### 📦 Load Carrier Weekly Billing Evolution")
+            load_carrier_weekly_fig = dashboard.plot_load_carrier_weekly_evolution()
+            st.plotly_chart(load_carrier_weekly_fig, use_container_width=True)
+            
             # Franchise Carrier Evolution
             st.markdown("### 🚛 Franchise Carrier Monthly Billing Evolution")
             franchise_carrier_fig = dashboard.plot_franchise_carrier_monthly_evolution()
@@ -844,9 +1067,21 @@ def create_monthly_ops_review_app():
             
         except Exception as e:
             st.error(f"❌ Error processing data: {str(e)}")
-            st.info("Please ensure your CSV file contains the required columns: DISPATCH NAME, BROKER RATE (CFC), BD MARGIN, DELIVERY DATE, etc.")
+            st.info("Please ensure your CSV file contains the required columns: DISPATCH NAME, BROKER RATE (FC) [$, BD MARGIN, DELIVERY DATE, etc.")
     else:
-        st.info("👆 Please upload a CSV file to begin the monthly operations review.")
+        st.info("👆 Please upload a CSV file using the sidebar to begin analysis.")
+        st.markdown("""
+        ### 📋 Expected CSV Format
+        The application expects CSV files with the following columns:
+        - `DISPATCH NAME`
+        - `BROKER RATE (FC) [$`
+        - `BD MARGIN`
+        - `DELIVERY DATE`
+        - `LOAD'S CARRIER COMPANY`
+        - `DRIVER'S CARRIER COMPANY`
+        - `TRAILER TYPE`
+        - `LOAD ID`
+        """)
 
 
 if __name__ == "__main__":

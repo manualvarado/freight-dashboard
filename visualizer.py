@@ -9,7 +9,7 @@ def plot_dispatcher_billing(df):
         return fig
     
     # Determine which column to use for billing
-    billing_col = 'BROKER RATE (CFC)' if 'BROKER RATE (CFC)' in df.columns else 'BROKER RATE'
+    billing_col = 'BROKER RATE (FC) [$' if 'BROKER RATE (FC) [$' in df.columns else 'BROKER RATE'
     
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.bar(df['DISPATCH NAME'], df[billing_col])
@@ -49,7 +49,7 @@ def plot_trailer_type_billing(df):
         return fig
     
     # Determine which column to use for billing
-    billing_col = 'BROKER RATE (CFC)' if 'BROKER RATE (CFC)' in df.columns else 'BROKER RATE'
+    billing_col = 'BROKER RATE (FC) [$' if 'BROKER RATE (FC) [$' in df.columns else 'BROKER RATE'
     
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.bar(df['TRAILER TYPE'], df[billing_col])
@@ -69,7 +69,7 @@ def plot_top_drivers(df):
         return fig
     
     fig, ax = plt.subplots(figsize=(12, 8))
-    ax.barh(df['DRIVER NAME'], df['DRIVER RATE'])
+    ax.barh(df['DRIVER NAME'], df['DRIVER RATE [$]'])
     ax.set_title('Top 20 Drivers by Earnings')
     ax.set_xlabel('Total Pay ($)')
     ax.set_ylabel('Driver')
@@ -94,18 +94,18 @@ def plot_carrier_miles(df):
     return fig
 
 def plot_broker_rate_cfc(df):
-    """Generates a bar chart for BROKER RATE (CFC) per dispatcher."""
+    """Generates a bar chart for BROKER RATE (FC) [$ per dispatcher."""
     if df.empty or len(df) == 0:
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes)
-        ax.set_title('BROKER RATE (CFC) - No Data')
+        ax.set_title('BROKER RATE (FC) [$ - No Data')
         return fig
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(df['DISPATCH NAME'], df['BROKER RATE (CFC)'])
-    ax.set_title('BROKER RATE (CFC) per Dispatcher')
+    ax.bar(df['DISPATCH NAME'], df['BROKER RATE (FC) [$'])
+    ax.set_title('BROKER RATE (FC) [$ per Dispatcher')
     ax.set_xlabel('Dispatcher')
-    ax.set_ylabel('BROKER RATE (CFC) ($)')
+    ax.set_ylabel('BROKER RATE (FC) [$ ($)')
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     return fig

@@ -47,8 +47,8 @@ heroku open
 Your CSV should include these columns:
 - `LOAD ID`: Unique load identifier
 - `DISPATCH NAME`: Name of the dispatcher
-- `BROKER RATE (CFC)`: Broker rate amount
-- `DRIVER RATE`: Driver pay amount
+- `BROKER RATE (FC) [$`: Broker rate amount
+- `DRIVER RATE [$]`: Driver pay amount
 - `DRIVER NAME`: Name of the driver
 - `TRAILER TYPE`: Type of trailer used
 - `LOAD STATUS`: Status of the load (Booked, Delivered, etc.)
@@ -63,7 +63,7 @@ Your CSV should include these columns:
 - Total Valid Loads
 - Total Billing
 - Total Driver Pay
-- Gross Margin %
+- B-Rate %
 
 ### 2. Enhanced Analytics
 - **Carrier Performance**: Billing and efficiency analysis

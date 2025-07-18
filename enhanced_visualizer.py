@@ -8,6 +8,81 @@ import streamlit as st
 import colorsys
 import random
 
+# Helper functions for dynamic column detection
+def find_broker_rate_column(df):
+    """Find the broker rate column, handling both old and new naming conventions."""
+    # Try new format first
+    if 'BROKER RATE (FC) [$' in df.columns:
+        return 'BROKER RATE (FC) [$'
+    # Try old format
+    elif 'BROKER RATE (CFC)' in df.columns:
+        return 'BROKER RATE (CFC)'
+    # Try other variations
+    elif 'BROKER RATE' in df.columns:
+        return 'BROKER RATE'
+    # Try lowercase variations
+    elif 'broker_rate' in df.columns:
+        return 'broker_rate'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'broker' in col.lower() and 'rate' in col.lower():
+                return col
+    return None
+
+def find_driver_rate_column(df):
+    """Find the driver rate column, handling both old and new naming conventions."""
+    # Try new format first
+    # Try old format
+    if 'DRIVER RATE' in df.columns:
+        return 'DRIVER RATE'
+    # Try lowercase variations
+    elif 'driver_rate' in df.columns:
+        return 'driver_rate'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'driver' in col.lower() and 'rate' in col.lower():
+                return col
+    return None
+
+def find_trailer_column(df):
+    """Find the trailer column, handling different naming conventions."""
+    # Try different variations
+    if 'trailer_col' in df.columns:
+        return 'trailer_col'
+    elif 'TRAILER' in df.columns:
+        return 'TRAILER'
+    elif 'trailer_type' in df.columns:
+        return 'trailer_type'
+    elif 'trailer' in df.columns:
+        return 'trailer'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'trailer' in col.lower():
+                return col
+    return None
+
+def find_dispatcher_column(df):
+    """Find the dispatcher column, handling different naming conventions."""
+    # Try different variations
+    if 'DISPATCH NAME' in df.columns:
+        return 'DISPATCH NAME'
+    elif 'FC NAME' in df.columns:
+        return 'FC NAME'
+    elif 'DISPATCH' in df.columns:
+        return 'DISPATCH'
+    elif 'dispatcher' in df.columns:
+        return 'dispatcher'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            col_lower = col.lower()
+            if 'dispatch' in col_lower or ('fc' in col_lower and 'name' in col_lower):
+                return col
+    return None
+
 def get_week_start(date):
     if pd.isna(date):
         return pd.NaT
@@ -20,20 +95,25 @@ def plot_total_billing_per_carrier(df):
     if df.empty or 'LOAD\'S CARRIER COMPANY' not in df.columns:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find broker rate column
+    broker_rate_col = find_broker_rate_column(df)
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Group by carrier and sum billing
-    carrier_billing = df.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (CFC)'].sum().reset_index()
-    carrier_billing = carrier_billing.sort_values('BROKER RATE (CFC)', ascending=True)  # For horizontal bar, ascending=True shows highest at top
+    carrier_billing = df.groupby('LOAD\'S CARRIER COMPANY')[broker_rate_col].sum().reset_index()
+    carrier_billing = carrier_billing.sort_values(broker_rate_col, ascending=True)  # For horizontal bar, ascending=True shows highest at top
     
     fig = px.bar(
         carrier_billing, 
-        x='BROKER RATE (CFC)', 
+        x=broker_rate_col, 
         y='LOAD\'S CARRIER COMPANY',
         orientation='h',
         title='Total Billing per Carrier',
-        labels={'BROKER RATE (CFC)': 'Total Billing ($)', 'LOAD\'S CARRIER COMPANY': 'Carrier'},
-        color='BROKER RATE (CFC)',
+        labels={broker_rate_col: 'Total Billing ($)', 'LOAD\'S CARRIER COMPANY': 'Carrier'},
+        color=broker_rate_col,
         color_continuous_scale='Blues',
-        text=carrier_billing['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.2f}')
+        text=carrier_billing[broker_rate_col].apply(lambda x: f'${x:,.2f}')
     )
     
     fig.update_traces(
@@ -52,88 +132,105 @@ def plot_total_billing_per_carrier(df):
 
 def plot_total_billing_per_dispatcher(df):
     """2. Total Billing per Dispatcher - Horizontal Bar Chart + BD Margin Overlay + Data Labels"""
-    if df.empty or 'DISPATCH NAME' not in df.columns:
+    if df.empty:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find dispatcher, broker rate, and BD margin columns
+    dispatcher_col = find_dispatcher_column(df)
+    broker_rate_col = find_broker_rate_column(df)
+    bd_margin_col = find_bd_margin_column(df)
+    
+    if not dispatcher_col:
+        return go.Figure().add_annotation(text="Dispatcher column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not bd_margin_col:
+        return go.Figure().add_annotation(text="BD margin column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Group by dispatcher and sum both billing and BD margin
-    dispatcher_stats = df.groupby('DISPATCH NAME').agg({
-        'BROKER RATE (CFC)': 'sum',
-        'BD MARGIN': 'sum'
+    dispatcher_stats = df.groupby(dispatcher_col).agg({
+        broker_rate_col: 'sum',
+        bd_margin_col: 'sum'
     }).reset_index()
     
     # Sort by billing amount
-    dispatcher_stats = dispatcher_stats.sort_values('BROKER RATE (CFC)', ascending=True)
+    dispatcher_stats = dispatcher_stats.sort_values(broker_rate_col, ascending=True)
     
     # Create figure with secondary y-axis
     fig = go.Figure()
     
     # Add billing bars (green)
     fig.add_trace(go.Bar(
-        x=dispatcher_stats['BROKER RATE (CFC)'],
-        y=dispatcher_stats['DISPATCH NAME'],
+        x=dispatcher_stats[broker_rate_col],
+        y=dispatcher_stats[dispatcher_col],
         orientation='h',
         name='Total Billing',
         marker_color='lightgreen',
-        text=dispatcher_stats['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.2f}'),
+        text=dispatcher_stats[broker_rate_col].apply(lambda x: f'${x:,.2f}'),
         textposition='outside',
         hovertemplate='<b>%{y}</b><br>Total Billing: $%{x:,.2f}<extra></extra>'
     ))
     
     # Add BD margin bars (red) superimposed
     fig.add_trace(go.Bar(
-        x=dispatcher_stats['BD MARGIN'],
-        y=dispatcher_stats['DISPATCH NAME'],
+        x=dispatcher_stats[bd_margin_col],
+        y=dispatcher_stats[dispatcher_col],
         orientation='h',
         name='BD Margin',
         marker_color='red',
         opacity=0.7,
-        text=dispatcher_stats['BD MARGIN'].apply(lambda x: f'${x:,.2f}'),
+        text=dispatcher_stats[bd_margin_col].apply(lambda x: f'${x:,.2f}'),
         textposition='inside',
         textfont=dict(color='white', size=10),
         hovertemplate='<b>%{y}</b><br>BD Margin: $%{x:,.2f}<extra></extra>'
     ))
     
     fig.update_layout(
-        title='Total Billing per Dispatcher (with BD Margin Overlay)',
-        height=400,
         barmode='overlay',
-        xaxis_title="Amount ($)",
-        yaxis_title="Dispatcher",
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        title='Total Billing per Dispatcher',
+        xaxis_title='Amount ($)',
+        yaxis_title='Dispatcher',
+        height=400,
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
     )
     
     return fig
 
 def plot_bd_margin_performance(df):
     """3. BD Margin per Dispatcher - Scatter Plot (X: Total Billing, Y: BD Margin) + Bubble Size = Load Count"""
-    if df.empty or 'DISPATCH NAME' not in df.columns or 'BD MARGIN' not in df.columns:
+    if df.empty:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find dispatcher, broker rate, and BD margin columns
+    dispatcher_col = find_dispatcher_column(df)
+    broker_rate_col = find_broker_rate_column(df)
+    bd_margin_col = find_bd_margin_column(df)
+    
+    if not dispatcher_col:
+        return go.Figure().add_annotation(text="Dispatcher column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not bd_margin_col:
+        return go.Figure().add_annotation(text="BD margin column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Group by dispatcher - use size() instead of counting specific column
-    dispatcher_stats = df.groupby('DISPATCH NAME').agg({
-        'BROKER RATE (CFC)': 'sum',
-        'BD MARGIN': 'sum'
+    dispatcher_stats = df.groupby(dispatcher_col).agg({
+        broker_rate_col: 'sum',
+        bd_margin_col: 'sum'
     }).reset_index()
     
     # Add load count using size
-    load_counts = df.groupby('DISPATCH NAME').size().reset_index(name='Load Count')
-    dispatcher_stats = dispatcher_stats.merge(load_counts, on='DISPATCH NAME')
+    load_counts = df.groupby(dispatcher_col).size().reset_index(name='Load Count')
+    dispatcher_stats = dispatcher_stats.merge(load_counts, on=dispatcher_col)
     
     fig = px.scatter(
         dispatcher_stats,
-        x='BROKER RATE (CFC)',
-        y='BD MARGIN',
+        x=broker_rate_col,
+        y=bd_margin_col,
         size='Load Count',
-        hover_name='DISPATCH NAME',
+        hover_name=dispatcher_col,
         title='Dispatcher Performance: Billing vs Margin vs Load Count',
-        labels={'BROKER RATE (CFC)': 'Total Billing ($)', 'BD MARGIN': 'BD Margin ($)', 'Load Count': 'Number of Loads'},
+        labels={broker_rate_col: 'Total Billing ($)', bd_margin_col: 'BD Margin ($)', 'Load Count': 'Number of Loads'},
         color='Load Count',
         color_continuous_scale='Viridis'
     )
@@ -148,11 +245,16 @@ def plot_bd_margin_performance(df):
 
 def plot_loads_per_dispatcher_by_status(df):
     """4. Total Number of Loads per Dispatcher (según status) - Stacked Bar Chart"""
-    if df.empty or 'DISPATCH NAME' not in df.columns or 'LOAD STATUS' not in df.columns:
+    if df.empty or 'LOAD STATUS' not in df.columns:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find dispatcher column
+    dispatcher_col = find_dispatcher_column(df)
+    if not dispatcher_col:
+        return go.Figure().add_annotation(text="Dispatcher column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Create pivot table
-    status_pivot = df.groupby(['DISPATCH NAME', 'LOAD STATUS']).size().unstack(fill_value=0)
+    status_pivot = df.groupby([dispatcher_col, 'LOAD STATUS']).size().unstack(fill_value=0)
     
     # Get all unique load statuses from the data
     all_statuses = df['LOAD STATUS'].dropna().unique()
@@ -208,7 +310,7 @@ def plot_loads_per_dispatcher_by_status(df):
     fig = px.bar(
         status_pivot,
         title='Load Status Distribution per Dispatcher',
-        labels={'value': 'Number of Loads', 'DISPATCH NAME': 'Dispatcher'},
+        labels={'value': 'Number of Loads'},
         color_discrete_map=color_map
     )
     
@@ -223,25 +325,30 @@ def plot_loads_per_dispatcher_by_status(df):
 
 def plot_top_drivers_earnings(df):
     """5. Top 20 Drivers by Driver Earnings - Vertical Bar Chart (top-down)"""
-    if df.empty or 'DRIVER NAME' not in df.columns or 'DRIVER RATE' not in df.columns:
+    if df.empty or 'DRIVER NAME' not in df.columns:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find driver rate column
+    driver_rate_col = find_driver_rate_column(df)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Get top 20 drivers
-    top_drivers = df.groupby('DRIVER NAME')['DRIVER RATE'].sum().nlargest(20).reset_index()
-    top_drivers = top_drivers.sort_values('DRIVER RATE', ascending=False)
+    top_drivers = df.groupby('DRIVER NAME')[driver_rate_col].sum().nlargest(20).reset_index()
+    top_drivers = top_drivers.sort_values(driver_rate_col, ascending=False)
     
     # Calculate percentage of total
-    total_earnings = df['DRIVER RATE'].sum()
-    top_drivers['Percentage'] = (top_drivers['DRIVER RATE'] / total_earnings * 100).round(1)
+    total_earnings = df[driver_rate_col].sum()
+    top_drivers['Percentage'] = (top_drivers[driver_rate_col] / total_earnings * 100).round(1)
     
     fig = px.bar(
         top_drivers,
         x='DRIVER NAME',
-        y='DRIVER RATE',
+        y=driver_rate_col,
         title='Top 20 Drivers by Earnings',
-        labels={'DRIVER RATE': 'Total Earnings ($)', 'DRIVER NAME': 'Driver'},
-        text='DRIVER RATE',
-        color='DRIVER RATE',
+        labels={driver_rate_col: 'Total Earnings ($)', 'DRIVER NAME': 'Driver'},
+        text=driver_rate_col,
+        color=driver_rate_col,
         color_continuous_scale='Reds'
     )
     
@@ -260,16 +367,24 @@ def plot_top_drivers_earnings(df):
 
 def plot_billing_per_trailer_type(df):
     """6. Total Billing per Trailer Type - Donut Chart"""
-    if df.empty or 'TRAILER TYPE' not in df.columns:
+    if df.empty:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
+    # Find trailer and broker rate columns
+    trailer_col = find_trailer_column(df)
+    broker_rate_col = find_broker_rate_column(df)
+    if not trailer_col:
+        return go.Figure().add_annotation(text="Trailer column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Group by trailer type
-    trailer_billing = df.groupby('TRAILER TYPE')['BROKER RATE (CFC)'].sum().reset_index()
+    trailer_billing = df.groupby(trailer_col)[broker_rate_col].sum().reset_index()
     
     fig = px.pie(
         trailer_billing,
-        values='BROKER RATE (CFC)',
-        names='TRAILER TYPE',
+        values=broker_rate_col,
+        names=trailer_col,
         title='Total Billing by Trailer Type',
         hole=0.4  # Creates donut chart
     )
@@ -281,8 +396,13 @@ def plot_billing_per_trailer_type(df):
 
 def plot_average_driver_earnings_weekly(df):
     """Create a line chart showing average driver earnings per week."""
-    if 'DELIVERY DATE' not in df.columns or 'DRIVER RATE' not in df.columns:
+    if 'DELIVERY DATE' not in df.columns:
         return go.Figure().add_annotation(text="Required columns not found", x=0.5, y=0.5, showarrow=False)
+    
+    # Find driver rate column
+    driver_rate_col = find_driver_rate_column(df)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", x=0.5, y=0.5, showarrow=False)
     
     # Convert DELIVERY DATE to datetime
     df_copy = df.copy()
@@ -299,7 +419,7 @@ def plot_average_driver_earnings_weekly(df):
         df_copy['Week'] = df_copy['DELIVERY DATE'].dt.to_period('W')
         
         # Calculate average earnings per week
-        weekly_earnings = df_copy.groupby('Week')['DRIVER RATE'].mean().reset_index()
+        weekly_earnings = df_copy.groupby('Week')[driver_rate_col].mean().reset_index()
         weekly_earnings['Week'] = weekly_earnings['Week'].astype(str)
         
         # Create line chart
@@ -307,7 +427,7 @@ def plot_average_driver_earnings_weekly(df):
         
         fig.add_trace(go.Scatter(
             x=weekly_earnings['Week'],
-            y=weekly_earnings['DRIVER RATE'],
+            y=weekly_earnings[driver_rate_col],
             mode='lines+markers',
             name='Average Weekly Earnings',
             line=dict(color='blue', width=3),
@@ -408,12 +528,21 @@ def plot_driver_miles_heatmap(df):
 
 def plot_bd_margin_distribution(df):
     """10. BD Margin % Distribution - Histogram + Line Chart (promedio móvil)"""
-    if df.empty or 'BD MARGIN' not in df.columns or 'BROKER RATE (CFC)' not in df.columns:
+    if df.empty:
         return go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
+    # Find broker rate and BD margin columns
+    broker_rate_col = find_broker_rate_column(df)
+    bd_margin_col = find_bd_margin_column(df)
+    
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not bd_margin_col:
+        return go.Figure().add_annotation(text="BD margin column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
     # Calculate margin percentage
     df_copy = df.copy()  # Create a copy to avoid SettingWithCopyWarning
-    df_copy['Margin_Percentage'] = (df_copy['BD MARGIN'] / df_copy['BROKER RATE (CFC)'] * 100).fillna(0)
+    df_copy['Margin_Percentage'] = (df_copy[bd_margin_col] / df_copy[broker_rate_col] * 100).fillna(0)
     
     # Remove outliers (above 100% or below -50%)
     margin_data = df_copy[(df_copy['Margin_Percentage'] <= 100) & (df_copy['Margin_Percentage'] >= -50)]
@@ -464,21 +593,27 @@ def plot_carrier_performance_analysis(df):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     
-    if df.empty or 'LOAD\'S CARRIER COMPANY' not in df.columns or 'BROKER RATE (CFC)' not in df.columns or 'FULL MILES TOTAL' not in df.columns:
+    if df.empty or 'LOAD\'S CARRIER COMPANY' not in df.columns or 'FULL MILES TOTAL' not in df.columns:
         empty_fig = go.Figure().add_annotation(text="No data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return empty_fig, empty_fig
+    
+    # Find broker rate column
+    broker_rate_col = find_broker_rate_column(df)
+    if not broker_rate_col:
+        empty_fig = go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return empty_fig, empty_fig
     
     # Group by carrier and calculate metrics
     carrier_stats = df.groupby('LOAD\'S CARRIER COMPANY').agg({
-        'BROKER RATE (CFC)': 'sum',
+        broker_rate_col: 'sum',
         'FULL MILES TOTAL': 'sum'
     }).reset_index()
     
     # Calculate revenue per mile
-    carrier_stats['Revenue_Per_Mile'] = (carrier_stats['BROKER RATE (CFC)'] / carrier_stats['FULL MILES TOTAL']).fillna(0)
+    carrier_stats['Revenue_Per_Mile'] = (carrier_stats[broker_rate_col] / carrier_stats['FULL MILES TOTAL']).fillna(0)
     
     # Sort by total billing
-    carrier_stats = carrier_stats.sort_values('BROKER RATE (CFC)', ascending=False)
+    carrier_stats = carrier_stats.sort_values(broker_rate_col, ascending=False)
     
     # Top row: Billing and Miles
     fig_top = make_subplots(rows=1, cols=2, subplot_titles=('Total Billing by Carrier', 'Total Miles by Carrier'))
@@ -486,10 +621,10 @@ def plot_carrier_performance_analysis(df):
     fig_top.add_trace(
         go.Bar(
             x=carrier_stats['LOAD\'S CARRIER COMPANY'],
-            y=carrier_stats['BROKER RATE (CFC)'],
+            y=carrier_stats[broker_rate_col],
             name='Total Billing',
             marker_color='#1f77b4',
-            text=carrier_stats['BROKER RATE (CFC)'].apply(lambda x: f'${x:,.2f}'),
+            text=carrier_stats[broker_rate_col].apply(lambda x: f'${x:,.2f}'),
             textposition='outside'
         ),
         row=1, col=1
@@ -541,7 +676,7 @@ def plot_carrier_performance_analysis(df):
             mode='markers+text',
             name='Efficiency',
             marker=dict(
-                size=carrier_stats['BROKER RATE (CFC)'] / carrier_stats['BROKER RATE (CFC)'].max() * 20 + 10,
+                size=carrier_stats[broker_rate_col] / carrier_stats[broker_rate_col].max() * 20 + 10,
                 color=carrier_stats['Revenue_Per_Mile'],
                 colorscale='Viridis',
                 showscale=True,
@@ -576,8 +711,17 @@ def plot_driver_income_analysis(weekly_earnings):
     if weekly_earnings.empty:
         return go.Figure().add_annotation(text="No weekly earnings data available", x=0.5, y=0.5, showarrow=False)
     
+    # Find the actual column names in the data
+    driver_rate_col = find_driver_rate_column(weekly_earnings)
+    trailer_col = find_trailer_column(weekly_earnings)
+    
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", x=0.5, y=0.5, showarrow=False)
+    if not trailer_col:
+        return go.Figure().add_annotation(text="Trailer column not found", x=0.5, y=0.5, showarrow=False)
+    
     # Check if required columns exist
-    required_columns = ['DRIVER NAME', 'WEEK_START', 'TRAILER TYPE', 'DRIVER RATE', 'TARGET', 'PERCENTAGE_TO_TARGET']
+    required_columns = ['DRIVER NAME', 'WEEK_START', 'TARGET', 'PERCENTAGE_TO_TARGET']
     missing_columns = [col for col in required_columns if col not in weekly_earnings.columns]
     
     if missing_columns:
@@ -600,13 +744,13 @@ def plot_driver_income_analysis(weekly_earnings):
     )
     
     # 1. Weekly Earnings vs Target Scatter Plot
-    flatbed_data = weekly_earnings[weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]
-    other_data = weekly_earnings[~weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]
+    flatbed_data = weekly_earnings[weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])]
+    other_data = weekly_earnings[~weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])]
     
     fig.add_trace(
         go.Scatter(
             x=flatbed_data['WEEK_START'],
-            y=flatbed_data['DRIVER RATE'],
+            y=flatbed_data[driver_rate_col],
             mode='markers',
             name='Flatbed/Stepdeck',
             marker=dict(color='red', size=8),
@@ -619,7 +763,7 @@ def plot_driver_income_analysis(weekly_earnings):
     fig.add_trace(
         go.Scatter(
             x=other_data['WEEK_START'],
-            y=other_data['DRIVER RATE'],
+            y=other_data[driver_rate_col],
             mode='markers',
             name='Other Trailers',
             marker=dict(color='blue', size=8),
@@ -651,7 +795,7 @@ def plot_driver_income_analysis(weekly_earnings):
                   annotation_text="100% Target", row=1, col=2)
     
     # 3. Top Drivers by Weekly Earnings
-    top_drivers = weekly_earnings.groupby('DRIVER NAME')['DRIVER RATE'].mean().nlargest(15)
+    top_drivers = weekly_earnings.groupby('DRIVER NAME')[driver_rate_col].mean().nlargest(15)
     
     fig.add_trace(
         go.Bar(
@@ -666,14 +810,14 @@ def plot_driver_income_analysis(weekly_earnings):
     )
     
     # 4. Target Achievement by Trailer Type
-    trailer_performance = weekly_earnings.groupby('TRAILER TYPE').agg({
+    trailer_performance = weekly_earnings.groupby('trailer_col').agg({
         'PERCENTAGE_TO_TARGET': 'mean',
-        'DRIVER RATE': 'count'
+        driver_rate_col: 'count'
     }).reset_index()
     
     fig.add_trace(
         go.Bar(
-            x=trailer_performance['TRAILER TYPE'],
+            x=trailer_performance['trailer_col'],
             y=trailer_performance['PERCENTAGE_TO_TARGET'],
             name='Avg % to Target',
             marker_color='purple',
@@ -708,11 +852,68 @@ def plot_driver_income_analysis(weekly_earnings):
     
     return fig
 
+def generate_driver_performance_summary(weekly_earnings, metric_type="earnings", flatbed_rpm_target=2.0, dryvan_rpm_target=1.8):
+    """Generate driver performance summary for display in charts."""
+    targets = {
+        'Flatbed/Stepdeck': 6000,
+        'Dry Van/Reefer/Power Only': 5500
+    }
+    
+    trailer_groups = [t for t in targets.keys() if t in weekly_earnings['TRAILER GROUP'].unique()]
+    summary_text = ""
+    
+    for group in trailer_groups:
+        sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group].copy()
+        total_drivers = len(sub)
+        
+        if metric_type == "earnings":
+            overachievers = len(sub[sub['PERCENTAGE_TO_TARGET'] > 110])
+            on_target = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 100) & (sub['PERCENTAGE_TO_TARGET'] <= 110)])
+            watchlist = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 80) & (sub['PERCENTAGE_TO_TARGET'] < 100)])
+            underperformers = len(sub[sub['PERCENTAGE_TO_TARGET'] < 80])
+        elif metric_type == "miles":
+            miles_target = 3000
+            sub['MILES_PERCENTAGE'] = (sub['FULL MILES TOTAL'] / miles_target * 100).round(1)
+            overachievers = len(sub[sub['MILES_PERCENTAGE'] > 110])
+            on_target = len(sub[(sub['MILES_PERCENTAGE'] >= 100) & (sub['MILES_PERCENTAGE'] <= 110)])
+            watchlist = len(sub[(sub['MILES_PERCENTAGE'] >= 80) & (sub['MILES_PERCENTAGE'] < 100)])
+            underperformers = len(sub[sub['MILES_PERCENTAGE'] < 80])
+        elif metric_type == "revenue_per_mile":
+            revenue_targets = {
+                'Flatbed/Stepdeck': flatbed_rpm_target,
+                'Dry Van/Reefer/Power Only': dryvan_rpm_target
+            }
+            target = revenue_targets.get(group, dryvan_rpm_target)
+            # Find the actual driver rate column in the data
+            driver_rate_col = find_driver_rate_column(sub)
+            if not driver_rate_col:
+                continue
+            sub['REVENUE_PER_MILE'] = np.where(sub['FULL MILES TOTAL'] > 0, 
+                                             sub[driver_rate_col] / sub['FULL MILES TOTAL'], 0)
+            sub['REVENUE_PERCENTAGE'] = (sub['REVENUE_PER_MILE'] / target * 100).round(1)
+            overachievers = len(sub[sub['REVENUE_PERCENTAGE'] > 110])
+            on_target = len(sub[(sub['REVENUE_PERCENTAGE'] >= 100) & (sub['REVENUE_PERCENTAGE'] <= 110)])
+            watchlist = len(sub[(sub['REVENUE_PERCENTAGE'] >= 80) & (sub['REVENUE_PERCENTAGE'] < 100)])
+            underperformers = len(sub[sub['REVENUE_PERCENTAGE'] < 80])
+        
+        summary_text += f"\n{group}: Total: {total_drivers} drivers\n"
+        summary_text += f"💚 Overachievers: {overachievers} ({overachievers/total_drivers*100:.1f}%)\n"
+        summary_text += f"🟢 On Target: {on_target} ({on_target/total_drivers*100:.1f}%)\n"
+        summary_text += f"🟡 Watchlist: {watchlist} ({watchlist/total_drivers*100:.1f}%)\n"
+        summary_text += f"🔴 Underperformers: {underperformers} ({underperformers/total_drivers*100:.1f}%)\n"
+    
+    return summary_text
+
 def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
     """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=earnings, with color gradient based on target achievement. Fixes y-axis alignment."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     import numpy as np
+    
+    # Find the actual driver rate column in the data
+    driver_rate_col = find_driver_rate_column(weekly_earnings)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
     targets = {
         'Flatbed/Stepdeck': 6000,
@@ -748,7 +949,7 @@ def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
             '🔴 Underperformers (<80%)': '#FF0000'
         }
         # Sort by earnings for consistent y-axis - INVERTED ORDER
-        sub = sub.sort_values('DRIVER RATE', ascending=True)
+        sub = sub.sort_values(driver_rate_col, ascending=True)
         y_order = sub['DRIVER NAME'].tolist()
         for category in color_map.keys():
             category_data = sub[sub['Color_Category'] == category]
@@ -756,7 +957,7 @@ def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
                 fig.add_trace(
                     go.Bar(
                         y=category_data['DRIVER NAME'],
-                        x=category_data['DRIVER RATE'],
+                        x=category_data[driver_rate_col],
                         orientation='h',
                         name=category,
                         marker_color=color_map[category],
@@ -776,6 +977,7 @@ def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
             row=1, col=i+1
         )
         fig.update_xaxes(title_text="Weekly Earnings ($)", row=1, col=i+1)
+    
     fig.update_layout(
         title="Weekly Driver Earnings vs Target by Trailer Type",
         height=400 + 30 * max(5, df['DRIVER NAME'].nunique()),
@@ -793,13 +995,19 @@ def plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings):
 def plot_top_drivers_by_weekly_earnings_improved(weekly_earnings):
     """Horizontal bar chart of top drivers by weekly earnings (sorted, spaced)."""
     import plotly.graph_objects as go
-    top_df = weekly_earnings.groupby('DRIVER NAME')['DRIVER RATE'].mean().sort_values(ascending=False).reset_index()
+    
+    # Find the actual driver rate column in the data
+    driver_rate_col = find_driver_rate_column(weekly_earnings)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
+    top_df = weekly_earnings.groupby('DRIVER NAME')[driver_rate_col].mean().sort_values(ascending=False).reset_index()
     # Invert the order so top earners appear at the top
-    top_df = top_df.sort_values('DRIVER RATE', ascending=True)
+    top_df = top_df.sort_values(driver_rate_col, ascending=True)
     
     fig = go.Figure(go.Bar(
         y=top_df['DRIVER NAME'],
-        x=top_df['DRIVER RATE'],
+        x=top_df[driver_rate_col],
         orientation='h',
         marker_color='orange',
         hovertemplate='<b>%{y}</b><br>Avg Weekly: $%{x:,.0f}<extra></extra>'
@@ -826,6 +1034,12 @@ def plot_top_drivers_by_weekly_earnings_improved(weekly_earnings):
 def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
     """Bar chart: average % to target by trailer group, 100% line, with rate per mile text on bars."""
     import plotly.graph_objects as go
+    
+    # Find the actual driver rate column in the data
+    driver_rate_col = find_driver_rate_column(weekly_earnings)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     targets = {
         'Flatbed/Stepdeck': 6000,
         'Dry Van/Reefer/Power Only': 5500
@@ -834,7 +1048,7 @@ def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
     for group, target in targets.items():
         sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group]
         if not sub.empty:
-            avg_pct = (sub['DRIVER RATE'].mean() / target) * 100
+            avg_pct = (sub[driver_rate_col].mean() / target) * 100
             # Calculate rate per mile for this trailer group
             # We need to find the miles column in the original data
             miles_col = None
@@ -846,7 +1060,7 @@ def plot_target_achievement_by_trailer_type_improved(weekly_earnings):
             if miles_col and miles_col in sub.columns:
                 # Calculate total miles and total driver rate for this group
                 total_miles = sub[miles_col].sum()
-                total_driver_rate = sub['DRIVER RATE'].sum()
+                total_driver_rate = sub[driver_rate_col].sum()
                 if total_miles > 0:
                     rate_per_mile = total_driver_rate / total_miles
                 else:
@@ -975,6 +1189,7 @@ def plot_weekly_driver_miles_vs_target_faceted(weekly_earnings, miles_col='FULL 
             row=1, col=i+1
         )
         fig.update_xaxes(title_text="Weekly Miles", row=1, col=i+1)
+    
     fig.update_layout(
         title="Weekly Driver Miles vs Target by Trailer Type",
         height=400 + 30 * max(5, miles_df['DRIVER NAME'].nunique()),
@@ -1001,17 +1216,26 @@ def plot_revenue_per_mile_per_dispatcher(df):
             miles_col = col
             break
     
-    if not miles_col or 'DISPATCH NAME' not in df.columns:
-        return go.Figure().add_annotation(text="No miles or dispatcher data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not miles_col:
+        return go.Figure().add_annotation(text="No miles data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
+    # Find dispatcher and broker rate columns
+    dispatcher_col = find_dispatcher_column(df)
+    broker_rate_col = find_broker_rate_column(df)
+    
+    if not dispatcher_col:
+        return go.Figure().add_annotation(text="Dispatcher column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not broker_rate_col:
+        return go.Figure().add_annotation(text="Broker rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
     # Calculate revenue per mile per dispatcher
-    dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-        'BROKER RATE (CFC)': 'sum',
+    dispatcher_metrics = df.groupby(dispatcher_col).agg({
+        broker_rate_col: 'sum',
         miles_col: 'sum'
     }).reset_index()
     
     # Calculate revenue per mile
-    dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics['BROKER RATE (CFC)'] / dispatcher_metrics[miles_col]).round(2)
+    dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics[broker_rate_col] / dispatcher_metrics[miles_col]).round(2)
     
     # Remove any infinite or NaN values
     dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['REVENUE_PER_MILE'].notna() & (dispatcher_metrics['REVENUE_PER_MILE'] != float('inf'))]
@@ -1038,11 +1262,11 @@ def plot_revenue_per_mile_per_dispatcher(df):
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
-        x=dispatcher_metrics['DISPATCH NAME'],
+        x=dispatcher_metrics[dispatcher_col],
         y=dispatcher_metrics['REVENUE_PER_MILE'],
         marker_color=colors,
         hovertemplate='<b>%{x}</b><br>Revenue per Mile: $%{y:.2f}<br>Total Revenue: $' + 
-                     dispatcher_metrics['BROKER RATE (CFC)'].round(0).astype(str) + 
+                     dispatcher_metrics[broker_rate_col].round(0).astype(str) + 
                      '<br>Total Miles: ' + dispatcher_metrics[miles_col].round(0).astype(str) + 
                      '<extra></extra>'
     ))
@@ -1080,17 +1304,26 @@ def plot_driver_revenue_per_mile_per_dispatcher(df):
             miles_col = col
             break
     
-    if not miles_col or 'DISPATCH NAME' not in df.columns:
-        return go.Figure().add_annotation(text="No miles or dispatcher data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not miles_col:
+        return go.Figure().add_annotation(text="No miles data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
+    # Find dispatcher and driver rate columns
+    dispatcher_col = find_dispatcher_column(df)
+    driver_rate_col = find_driver_rate_column(df)
+    
+    if not dispatcher_col:
+        return go.Figure().add_annotation(text="Dispatcher column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
     # Calculate driver revenue per mile per dispatcher
-    dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-        'DRIVER RATE': 'sum',
+    dispatcher_metrics = df.groupby(dispatcher_col).agg({
+        driver_rate_col: 'sum',
         miles_col: 'sum'
     }).reset_index()
     
     # Calculate driver revenue per mile
-    dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics['DRIVER RATE'] / dispatcher_metrics[miles_col]).round(2)
+    dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics[driver_rate_col] / dispatcher_metrics[miles_col]).round(2)
     
     # Remove any infinite or NaN values
     dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].notna() & (dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] != float('inf'))]
@@ -1117,11 +1350,11 @@ def plot_driver_revenue_per_mile_per_dispatcher(df):
     fig = go.Figure()
     
     fig.add_trace(go.Bar(
-        x=dispatcher_metrics['DISPATCH NAME'],
+        x=dispatcher_metrics[dispatcher_col],
         y=dispatcher_metrics['DRIVER_REVENUE_PER_MILE'],
         marker_color=colors,
         hovertemplate='<b>%{x}</b><br>Driver Revenue per Mile: $%{y:.2f}<br>Total Driver Pay: $' + 
-                     dispatcher_metrics['DRIVER RATE'].round(0).astype(str) + 
+                     dispatcher_metrics[driver_rate_col].round(0).astype(str) + 
                      '<br>Total Miles: ' + dispatcher_metrics[miles_col].round(0).astype(str) + 
                      '<extra></extra>'
     ))
@@ -1153,12 +1386,19 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     if df.empty:
         return "No data available for analysis."
     
+    # Find required columns
+    broker_rate_col = find_broker_rate_column(df)
+    driver_rate_col = find_driver_rate_column(df)
+    trailer_col = find_trailer_column(df)
+    
     analysis = ""
     
     if chart_type == "carrier_billing":
         # Analysis for Total Billing per Carrier
-        total_billing = df['BROKER RATE (CFC)'].sum()
-        top_carrier = df.groupby('LOAD\'S CARRIER COMPANY')['BROKER RATE (CFC)'].sum().nlargest(1)
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
+        total_billing = df[broker_rate_col].sum()
+        top_carrier = df.groupby('LOAD\'S CARRIER COMPANY')[broker_rate_col].sum().nlargest(1)
         top_carrier_name = top_carrier.index[0]
         top_carrier_value = top_carrier.values[0]
         top_carrier_pct = (top_carrier_value / total_billing * 100)
@@ -1179,13 +1419,21 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "dispatcher_billing":
         # Analysis for Total Billing per Dispatcher
-        total_billing = df['BROKER RATE (CFC)'].sum()
-        top_dispatcher = df.groupby('DISPATCH NAME')['BROKER RATE (CFC)'].sum().nlargest(1)
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
+        
+        # Find dispatcher column
+        dispatcher_col = find_dispatcher_column(df)
+        if not dispatcher_col:
+            return "Dispatcher column not found for analysis."
+        
+        total_billing = df[broker_rate_col].sum()
+        top_dispatcher = df.groupby(dispatcher_col)[broker_rate_col].sum().nlargest(1)
         top_dispatcher_name = top_dispatcher.index[0]
         top_dispatcher_value = top_dispatcher.values[0]
         top_dispatcher_pct = (top_dispatcher_value / total_billing * 100)
         
-        avg_billing_per_dispatcher = total_billing / len(df['DISPATCH NAME'].unique())
+        avg_billing_per_dispatcher = total_billing / len(df[dispatcher_col].unique())
         
         analysis = f"""
         **📊 Total Billing per Dispatcher Analysis**
@@ -1194,7 +1442,7 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         - **Total Revenue**: ${total_billing:,.0f}
         - **Top Performer**: {top_dispatcher_name} (${top_dispatcher_value:,.0f}, {top_dispatcher_pct:.1f}% of total)
         - **Average per Dispatcher**: ${avg_billing_per_dispatcher:,.0f}
-        - **Active Dispatchers**: {len(df['DISPATCH NAME'].unique())}
+        - **Active Dispatchers**: {len(df[dispatcher_col].unique())}
         
         **Business Insights:**
         - {top_dispatcher_name} is your highest-billing dispatcher
@@ -1205,28 +1453,39 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "dispatcher_performance":
         # Analysis for Dispatcher Performance Matrix
-        dispatcher_stats = df.groupby('DISPATCH NAME').agg({
-            'BROKER RATE (CFC)': 'sum',
-            'BD MARGIN': 'sum'
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
+        
+        # Find dispatcher and BD margin columns
+        dispatcher_col = find_dispatcher_column(df)
+        bd_margin_col = find_bd_margin_column(df)
+        if not dispatcher_col:
+            return "Dispatcher column not found for analysis."
+        if not bd_margin_col:
+            return "BD margin column not found for analysis."
+        
+        dispatcher_stats = df.groupby(dispatcher_col).agg({
+            broker_rate_col: 'sum',
+            bd_margin_col: 'sum'
         }).reset_index()
         
         # Calculate efficiency metrics
-        dispatcher_stats['Efficiency'] = (dispatcher_stats['BD MARGIN'] / dispatcher_stats['BROKER RATE (CFC)'] * 100).fillna(0)
+        dispatcher_stats['Efficiency'] = (dispatcher_stats[bd_margin_col] / dispatcher_stats[broker_rate_col] * 100).fillna(0)
         
         top_efficiency = dispatcher_stats.loc[dispatcher_stats['Efficiency'].idxmax()]
-        top_billing = dispatcher_stats.loc[dispatcher_stats['BROKER RATE (CFC)'].idxmax()]
+        top_billing = dispatcher_stats.loc[dispatcher_stats[broker_rate_col].idxmax()]
         
         analysis = f"""
         **📊 Dispatcher Performance Matrix Analysis**
         
         **Key Findings:**
-        - **Most Efficient**: {top_efficiency['DISPATCH NAME']} ({top_efficiency['Efficiency']:.1f}% margin)
-        - **Highest Billing**: {top_billing['DISPATCH NAME']} (${top_billing['BROKER RATE (CFC)']:,.0f})
+        - **Most Efficient**: {top_efficiency[dispatcher_col]} ({top_efficiency['Efficiency']:.1f}% margin)
+        - **Highest Billing**: {top_billing[dispatcher_col]} (${top_billing[broker_rate_col]:,.0f})
         - **Performance Range**: {dispatcher_stats['Efficiency'].min():.1f}% to {dispatcher_stats['Efficiency'].max():.1f}% margin
         
         **Business Insights:**
-        - {top_efficiency['DISPATCH NAME']} achieves the best margin efficiency
-        - {top_billing['DISPATCH NAME']} generates the most revenue
+        - {top_efficiency[dispatcher_col]} achieves the best margin efficiency
+        - {top_billing[dispatcher_col]} generates the most revenue
         - Consider combining high-efficiency strategies with high-volume operations
         - Identify training opportunities for dispatchers below average efficiency
         """
@@ -1257,7 +1516,9 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "driver_earnings":
         # Analysis for Top Drivers by Earnings
-        driver_earnings = df.groupby('DRIVER NAME')['DRIVER RATE'].sum().sort_values(ascending=False)
+        if not driver_rate_col:
+            return "Driver rate column not found for analysis."
+        driver_earnings = df.groupby('DRIVER NAME')[driver_rate_col].sum().sort_values(ascending=False)
         total_earnings = driver_earnings.sum()
         top_driver_earnings = driver_earnings.iloc[0]
         top_driver_name = driver_earnings.index[0]
@@ -1284,7 +1545,9 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "trailer_billing":
         # Analysis for Billing by Trailer Type
-        trailer_billing = df.groupby('TRAILER TYPE')['BROKER RATE (CFC)'].sum().sort_values(ascending=False)
+        if not trailer_col or not broker_rate_col:
+            return "Trailer or broker rate column not found for analysis."
+        trailer_billing = df.groupby(trailer_col)[broker_rate_col].sum().sort_values(ascending=False)
         total_billing = trailer_billing.sum()
         top_trailer = trailer_billing.index[0]
         top_trailer_value = trailer_billing.iloc[0]
@@ -1308,12 +1571,14 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "weekly_earnings":
         # Analysis for Weekly Driver Earnings
+        if not driver_rate_col:
+            return "Driver rate column not found for analysis."
         if 'DELIVERY DATE' in df.columns:
             df_copy = df.copy()
             df_copy['DELIVERY DATE'] = pd.to_datetime(df_copy['DELIVERY DATE'], errors='coerce')
             df_copy['Week'] = df_copy['DELIVERY DATE'].dt.to_period('W')
             
-            weekly_earnings = df_copy.groupby('Week')['DRIVER RATE'].mean()
+            weekly_earnings = df_copy.groupby('Week')[driver_rate_col].mean()
             avg_weekly_earnings = weekly_earnings.mean()
             max_weekly_earnings = weekly_earnings.max()
             min_weekly_earnings = weekly_earnings.min()
@@ -1363,8 +1628,16 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "margin_distribution":
         # Analysis for BD Margin Distribution
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
+        
+        # Find BD margin column
+        bd_margin_col = find_bd_margin_column(df)
+        if not bd_margin_col:
+            return "BD margin column not found for analysis."
+        
         df_copy = df.copy()
-        df_copy['Margin_Percentage'] = (df_copy['BD MARGIN'] / df_copy['BROKER RATE (CFC)'] * 100).fillna(0)
+        df_copy['Margin_Percentage'] = (df_copy[bd_margin_col] / df_copy[broker_rate_col] * 100).fillna(0)
         margin_data = df_copy[(df_copy['Margin_Percentage'] <= 100) & (df_copy['Margin_Percentage'] >= -50)]
         
         avg_margin = margin_data['Margin_Percentage'].mean()
@@ -1390,13 +1663,15 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "carrier_performance":
         # Analysis for Combined Carrier Performance
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
         carrier_stats = df.groupby('LOAD\'S CARRIER COMPANY').agg({
-            'BROKER RATE (CFC)': 'sum',
+            broker_rate_col: 'sum',
             'FULL MILES TOTAL': 'sum'
         }).reset_index()
-        carrier_stats['Revenue_Per_Mile'] = (carrier_stats['BROKER RATE (CFC)'] / carrier_stats['FULL MILES TOTAL']).fillna(0)
+        carrier_stats['Revenue_Per_Mile'] = (carrier_stats[broker_rate_col] / carrier_stats['FULL MILES TOTAL']).fillna(0)
         
-        top_revenue = carrier_stats.loc[carrier_stats['BROKER RATE (CFC)'].idxmax()]
+        top_revenue = carrier_stats.loc[carrier_stats[broker_rate_col].idxmax()]
         top_miles = carrier_stats.loc[carrier_stats['FULL MILES TOTAL'].idxmax()]
         top_efficiency = carrier_stats.loc[carrier_stats['Revenue_Per_Mile'].idxmax()]
         
@@ -1404,7 +1679,7 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         **📊 Comprehensive Carrier Performance Analysis**
         
         **Key Findings:**
-        - **Highest Revenue**: {top_revenue["LOAD'S CARRIER COMPANY"]} (${top_revenue['BROKER RATE (CFC)']:,.0f})
+        - **Highest Revenue**: {top_revenue["LOAD'S CARRIER COMPANY"]} (${top_revenue[broker_rate_col]:,.0f})
         - **Most Miles**: {top_miles["LOAD'S CARRIER COMPANY"]} ({top_miles['FULL MILES TOTAL']:,.0f} miles)
         - **Best Efficiency**: {top_efficiency["LOAD'S CARRIER COMPANY"]} (${top_efficiency['Revenue_Per_Mile']:.2f}/mile)
         - **Active Carriers**: {len(carrier_stats)} carriers
@@ -1419,9 +1694,18 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     elif chart_type == "driver_income":
         # Analysis for Driver Income Analysis
-        if 'DELIVERY DATE' not in df.columns or 'DRIVER NAME' not in df.columns or 'DRIVER RATE' not in df.columns:
+        if 'DELIVERY DATE' not in df.columns or 'DRIVER NAME' not in df.columns:
             analysis = "**📊 Driver Income Analysis**\n\nRequired delivery date and driver data not available for analysis."
             return analysis
+        
+        # Find the actual column names in the data
+        driver_rate_col = find_driver_rate_column(df)
+        trailer_col = find_trailer_column(df)
+        
+        if not driver_rate_col:
+            return "Driver rate column not found for analysis."
+        if not trailer_col:
+            return "Trailer column not found for analysis."
         
         # Import datetime here to avoid circular imports
         from datetime import datetime, timedelta
@@ -1441,7 +1725,7 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         df_copy['WEEK_START'] = df_copy['DELIVERY DATE'].apply(get_week_start)
         
         # Group by driver and week
-        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER TYPE'])['DRIVER RATE'].sum().reset_index()
+        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', trailer_col])[driver_rate_col].sum().reset_index()
         
         # Calculate target and percentage
         def get_weekly_target(trailer_type):
@@ -1450,22 +1734,22 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
             else:
                 return 5500
         
-        weekly_earnings['TARGET'] = weekly_earnings['TRAILER TYPE'].apply(get_weekly_target)
-        weekly_earnings['PERCENTAGE_TO_TARGET'] = (weekly_earnings['DRIVER RATE'] / weekly_earnings['TARGET'] * 100).round(1)
+        weekly_earnings['TARGET'] = weekly_earnings[trailer_col].apply(get_weekly_target)
+        weekly_earnings['PERCENTAGE_TO_TARGET'] = (weekly_earnings[driver_rate_col] / weekly_earnings['TARGET'] * 100).round(1)
         
         # Calculate statistics
-        avg_weekly_earnings = weekly_earnings['DRIVER RATE'].mean()
+        avg_weekly_earnings = weekly_earnings[driver_rate_col].mean()
         weeks_above_target = len(weekly_earnings[weekly_earnings['PERCENTAGE_TO_TARGET'] >= 100])
         total_weeks = len(weekly_earnings)
         target_achievement_rate = (weeks_above_target / total_weeks * 100) if total_weeks > 0 else 0
         
         # Trailer type analysis
-        flatbed_avg = weekly_earnings[weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]['DRIVER RATE'].mean()
-        other_avg = weekly_earnings[~weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]['DRIVER RATE'].mean()
+        flatbed_avg = weekly_earnings[weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])][driver_rate_col].mean()
+        other_avg = weekly_earnings[~weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])][driver_rate_col].mean()
         
         # Top performers
-        top_driver = weekly_earnings.groupby('DRIVER NAME')['DRIVER RATE'].mean().idxmax()
-        top_driver_avg = weekly_earnings.groupby('DRIVER NAME')['DRIVER RATE'].mean().max()
+        top_driver = weekly_earnings.groupby('DRIVER NAME')[driver_rate_col].mean().idxmax()
+        top_driver_avg = weekly_earnings.groupby('DRIVER NAME')[driver_rate_col].mean().max()
         
         analysis = f"""
         **📊 Driver Income Analysis: Weekly Earnings vs Targets (Based on Delivery Dates)**
@@ -1501,16 +1785,24 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
                 miles_col = col
                 break
         
-        if not miles_col or 'DISPATCH NAME' not in df.columns:
-            analysis = "**📊 Revenue per Mile per Dispatcher Analysis**\n\nMiles or dispatcher data not available for analysis."
+        if not miles_col:
+            analysis = "**📊 Revenue per Mile per Dispatcher Analysis**\n\nMiles data not available for analysis."
             return analysis
         
-        dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-            'BROKER RATE (CFC)': 'sum',
+        # Find dispatcher column
+        dispatcher_col = find_dispatcher_column(df)
+        if not dispatcher_col:
+            analysis = "**📊 Revenue per Mile per Dispatcher Analysis**\n\nDispatcher data not available for analysis."
+            return analysis
+        
+        if not broker_rate_col:
+            return "Broker rate column not found for analysis."
+        dispatcher_metrics = df.groupby(dispatcher_col).agg({
+            broker_rate_col: 'sum',
             miles_col: 'sum'
         }).reset_index()
         
-        dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics['BROKER RATE (CFC)'] / dispatcher_metrics[miles_col]).round(2)
+        dispatcher_metrics['REVENUE_PER_MILE'] = (dispatcher_metrics[broker_rate_col] / dispatcher_metrics[miles_col]).round(2)
         dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['REVENUE_PER_MILE'].notna() & (dispatcher_metrics['REVENUE_PER_MILE'] != float('inf'))]
         
         if dispatcher_metrics.empty:
@@ -1519,21 +1811,21 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         
         top_dispatcher = dispatcher_metrics.loc[dispatcher_metrics['REVENUE_PER_MILE'].idxmax()]
         avg_revenue_per_mile = dispatcher_metrics['REVENUE_PER_MILE'].mean()
-        total_revenue = dispatcher_metrics['BROKER RATE (CFC)'].sum()
+        total_revenue = dispatcher_metrics[broker_rate_col].sum()
         total_miles = dispatcher_metrics[miles_col].sum()
         
         analysis = f"""
         **📊 Revenue per Mile per Dispatcher Analysis**
         
         **Key Findings:**
-        - **Top Performer**: {top_dispatcher['DISPATCH NAME']} (${top_dispatcher['REVENUE_PER_MILE']:.2f}/mile)
+        - **Top Performer**: {top_dispatcher[dispatcher_col]} (${top_dispatcher['REVENUE_PER_MILE']:.2f}/mile)
         - **Average Revenue per Mile**: ${avg_revenue_per_mile:.2f}
         - **Total Revenue**: ${total_revenue:,.0f}
         - **Total Miles**: {total_miles:,.0f} miles
         - **Active Dispatchers**: {len(dispatcher_metrics)} dispatchers
         
         **Business Insights:**
-        - {top_dispatcher['DISPATCH NAME']} generates the highest revenue per mile
+        - {top_dispatcher[dispatcher_col]} generates the highest revenue per mile
         - Average revenue per mile is ${avg_revenue_per_mile:.2f}
         - Consider sharing best practices from top performers
         - Monitor dispatcher efficiency and route optimization
@@ -1549,16 +1841,24 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
                 miles_col = col
                 break
         
-        if not miles_col or 'DISPATCH NAME' not in df.columns:
-            analysis = "**📊 Driver Revenue per Mile per Dispatcher Analysis**\n\nMiles or dispatcher data not available for analysis."
+        if not miles_col:
+            analysis = "**📊 Driver Revenue per Mile per Dispatcher Analysis**\n\nMiles data not available for analysis."
             return analysis
         
-        dispatcher_metrics = df.groupby('DISPATCH NAME').agg({
-            'DRIVER RATE': 'sum',
+        # Find dispatcher column
+        dispatcher_col = find_dispatcher_column(df)
+        if not dispatcher_col:
+            analysis = "**📊 Driver Revenue per Mile per Dispatcher Analysis**\n\nDispatcher data not available for analysis."
+            return analysis
+        
+        if not driver_rate_col:
+            return "Driver rate column not found for analysis."
+        dispatcher_metrics = df.groupby(dispatcher_col).agg({
+            driver_rate_col: 'sum',
             miles_col: 'sum'
         }).reset_index()
         
-        dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics['DRIVER RATE'] / dispatcher_metrics[miles_col]).round(2)
+        dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] = (dispatcher_metrics[driver_rate_col] / dispatcher_metrics[miles_col]).round(2)
         dispatcher_metrics = dispatcher_metrics[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].notna() & (dispatcher_metrics['DRIVER_REVENUE_PER_MILE'] != float('inf'))]
         
         if dispatcher_metrics.empty:
@@ -1567,21 +1867,21 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
         
         top_dispatcher = dispatcher_metrics.loc[dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].idxmax()]
         avg_driver_revenue_per_mile = dispatcher_metrics['DRIVER_REVENUE_PER_MILE'].mean()
-        total_driver_pay = dispatcher_metrics['DRIVER RATE'].sum()
+        total_driver_pay = dispatcher_metrics[driver_rate_col].sum()
         total_miles = dispatcher_metrics[miles_col].sum()
         
         analysis = f"""
         **📊 Driver Revenue per Mile per Dispatcher Analysis**
         
         **Key Findings:**
-        - **Top Performer**: {top_dispatcher['DISPATCH NAME']} (${top_dispatcher['DRIVER_REVENUE_PER_MILE']:.2f}/mile)
+        - **Top Performer**: {top_dispatcher[dispatcher_col]} (${top_dispatcher['DRIVER_REVENUE_PER_MILE']:.2f}/mile)
         - **Average Driver Revenue per Mile**: ${avg_driver_revenue_per_mile:.2f}
         - **Total Driver Pay**: ${total_driver_pay:,.0f}
         - **Total Miles**: {total_miles:,.0f} miles
         - **Active Dispatchers**: {len(dispatcher_metrics)} dispatchers
         
         **Business Insights:**
-        - {top_dispatcher['DISPATCH NAME']} pays drivers the highest rate per mile
+        - {top_dispatcher[dispatcher_col]} pays drivers the highest rate per mile
         - Average driver revenue per mile is ${avg_driver_revenue_per_mile:.2f}
         - Monitor driver compensation fairness across dispatchers
         - Consider driver retention strategies for high-paying dispatchers
@@ -1590,7 +1890,7 @@ def generate_chart_analysis(chart_type, df, chart_data=None):
     
     return analysis 
 
-def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col='FULL MILES TOTAL'):
+def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col='FULL MILES TOTAL', flatbed_rpm_target=2.0, dryvan_rpm_target=1.8):
     """Faceted horizontal bar chart: one facet per trailer group, y=driver, x=revenue per mile, with color gradient based on target achievement."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -1600,10 +1900,10 @@ def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles
     if miles_col not in weekly_earnings.columns:
         return go.Figure().add_annotation(text="No miles data available", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
     
-    # Revenue per mile targets (example targets - adjust as needed)
+    # Revenue per mile targets (configurable)
     revenue_per_mile_targets = {
-        'Flatbed/Stepdeck': 2.0,  # $2.00 per mile target
-        'Dry Van/Reefer/Power Only': 1.8  # $1.80 per mile target
+        'Flatbed/Stepdeck': flatbed_rpm_target,  # Configurable target
+        'Dry Van/Reefer/Power Only': dryvan_rpm_target  # Configurable target
     }
     
     df = weekly_earnings.copy()
@@ -1626,18 +1926,23 @@ def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles
     
     df[miles_col] = df[miles_col].apply(parse_number)
     
+    # Find the actual driver rate column in the data
+    driver_rate_col = find_driver_rate_column(df)
+    if not driver_rate_col:
+        return go.Figure().add_annotation(text="Driver rate column not found", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+    
     # Calculate revenue per mile
-    df['REVENUE_PER_MILE'] = np.where(df[miles_col] > 0, df['DRIVER RATE'] / df[miles_col], 0)
+    df['REVENUE_PER_MILE'] = np.where(df[miles_col] > 0, df[driver_rate_col] / df[miles_col], 0)
     
     # Group by driver, week, and trailer group
     revenue_df = df.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER GROUP']).agg({
-        'DRIVER RATE': 'sum',
+        driver_rate_col: 'sum',
         miles_col: 'sum'
     }).reset_index()
     
     # Calculate revenue per mile for grouped data
     revenue_df['REVENUE_PER_MILE'] = np.where(revenue_df[miles_col] > 0, 
-                                             revenue_df['DRIVER RATE'] / revenue_df[miles_col], 0)
+                                             revenue_df[driver_rate_col] / revenue_df[miles_col], 0)
     
     # Calculate percentage to target
     def get_target_for_group(group):
@@ -1722,3 +2027,15 @@ def plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles
         )
     )
     return fig
+
+def find_bd_margin_column(df):
+    """Find the BD margin column, handling different naming conventions."""
+    candidates = ['BD MARGIN [$]', 'BD MARGIN', 'bd_margin', 'bd margin']
+    for c in candidates:
+        if c in df.columns:
+            return c
+    # Try case-insensitive search
+    for col in df.columns:
+        if 'bd' in col.lower() and 'margin' in col.lower():
+            return col
+    return None

@@ -23,7 +23,6 @@ from enhanced_visualizer import (
     plot_billing_per_trailer_type,
     plot_average_driver_earnings_weekly,
     plot_total_miles_per_carrier,
-    plot_driver_miles_heatmap,
     plot_bd_margin_distribution,
     plot_carrier_performance_analysis,
     plot_driver_income_analysis,
@@ -68,7 +67,8 @@ def get_weekly_target(trailer_type):
 
 def calculate_weekly_earnings(df, miles_col=None):
     """Calculate driver earnings by week (Tuesday to Monday) based on delivery dates."""
-    if 'DELIVERY DATE' not in df.columns or 'DRIVER NAME' not in df.columns or 'DRIVER RATE' not in df.columns:
+    driver_rate_col = find_driver_rate_column(df)
+    if 'DELIVERY DATE' not in df.columns or 'DRIVER NAME' not in df.columns or not driver_rate_col:
         return pd.DataFrame()
     
     # Convert DELIVERY DATE to datetime with flexible parsing
@@ -98,19 +98,26 @@ def calculate_weekly_earnings(df, miles_col=None):
     df_copy['WEEK_START'] = df_copy['DELIVERY DATE'].apply(get_week_start)
     
     # Group by driver and week - include miles if available
+    driver_rate_col = find_driver_rate_column(df_copy)
+    trailer_col = find_trailer_column(df_copy)
+    
+    if not trailer_col:
+        st.error("❌ Trailer column not found! Expected one of: 'TRAILER TYPE', 'TRAILER', 'trailer_type', 'trailer'")
+        return pd.DataFrame()
+    
     if miles_col and miles_col in df_copy.columns:
         # Include miles in the grouping
-        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER TYPE']).agg({
-            'DRIVER RATE': 'sum',
+        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', trailer_col]).agg({
+            driver_rate_col: 'sum',
             miles_col: 'sum'
         }).reset_index()
     else:
         # Original grouping without miles
-        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', 'TRAILER TYPE'])['DRIVER RATE'].sum().reset_index()
+        weekly_earnings = df_copy.groupby(['DRIVER NAME', 'WEEK_START', trailer_col])[driver_rate_col].sum().reset_index()
     
     # Calculate target and percentage
-    weekly_earnings['TARGET'] = weekly_earnings['TRAILER TYPE'].apply(get_weekly_target)
-    weekly_earnings['PERCENTAGE_TO_TARGET'] = (weekly_earnings['DRIVER RATE'] / weekly_earnings['TARGET'] * 100).round(1)
+    weekly_earnings['TARGET'] = weekly_earnings[trailer_col].apply(get_weekly_target)
+    weekly_earnings['PERCENTAGE_TO_TARGET'] = (weekly_earnings[driver_rate_col] / weekly_earnings['TARGET'] * 100).round(1)
     
     print(f"Debug: Generated {len(weekly_earnings)} weekly earnings records")
     print(f"Debug: Week range: {weekly_earnings['WEEK_START'].min()} to {weekly_earnings['WEEK_START'].max()}")
@@ -123,7 +130,7 @@ def calculate_weekly_earnings(df, miles_col=None):
             return 'Dry Van/Reefer/Power Only'
         else:
             return trailer
-    weekly_earnings['TRAILER GROUP'] = weekly_earnings['TRAILER TYPE'].apply(trailer_group)
+    weekly_earnings['TRAILER GROUP'] = weekly_earnings[trailer_col].apply(trailer_group)
 
     return weekly_earnings
 
@@ -131,6 +138,94 @@ def find_column(df, target):
     target_clean = target.replace('_', '').replace(' ', '').upper()
     for col in df.columns:
         if col.replace('_', '').replace(' ', '').upper() == target_clean:
+            return col
+    return None
+
+def find_broker_rate_column(df):
+    """Find the broker rate column, handling both old and new naming conventions."""
+    # Try new format first
+    if 'BROKER RATE (FC) [$' in df.columns:
+        return 'BROKER RATE (FC) [$'
+    # Try old format
+    elif 'BROKER RATE (CFC)' in df.columns:
+        return 'BROKER RATE (CFC)'
+    # Try other variations
+    elif 'BROKER RATE' in df.columns:
+        return 'BROKER RATE'
+    # Try lowercase variations
+    elif 'broker_rate' in df.columns:
+        return 'broker_rate'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'broker' in col.lower() and 'rate' in col.lower():
+                return col
+    return None
+
+def find_driver_rate_column(df):
+    """Find the driver rate column, handling both old and new naming conventions."""
+    # Try new format first
+    if 'DRIVER RATE [$]' in df.columns:
+        return 'DRIVER RATE [$]'
+    # Try old format
+    elif 'DRIVER RATE' in df.columns:
+        return 'DRIVER RATE'
+    # Try lowercase variations
+    elif 'driver_rate' in df.columns:
+        return 'driver_rate'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'driver' in col.lower() and 'rate' in col.lower():
+                return col
+    return None
+
+def find_trailer_column(df):
+    """Find the trailer column, handling different naming conventions."""
+    # Try different variations
+    if 'TRAILER TYPE' in df.columns:
+        return 'TRAILER TYPE'
+    elif 'TRAILER' in df.columns:
+        return 'TRAILER'
+    elif 'trailer_type' in df.columns:
+        return 'trailer_type'
+    elif 'trailer' in df.columns:
+        return 'trailer'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            if 'trailer' in col.lower():
+                return col
+    return None
+
+def find_dispatcher_column(df):
+    """Find the dispatcher column, handling different naming conventions."""
+    # Try different variations
+    if 'DISPATCH NAME' in df.columns:
+        return 'DISPATCH NAME'
+    elif 'FC NAME' in df.columns:
+        return 'FC NAME'
+    elif 'DISPATCH' in df.columns:
+        return 'DISPATCH'
+    elif 'dispatcher' in df.columns:
+        return 'dispatcher'
+    # Try case-insensitive search
+    else:
+        for col in df.columns:
+            col_lower = col.lower()
+            if 'dispatch' in col_lower or ('fc' in col_lower and 'name' in col_lower):
+                return col
+    return None
+
+def find_bd_margin_column(df):
+    """Find the BD margin column, handling different naming conventions."""
+    candidates = ['BD MARGIN [$]', 'BD MARGIN', 'bd_margin', 'bd margin']
+    for c in candidates:
+        if c in df.columns:
+            return c
+    # Try case-insensitive search
+    for col in df.columns:
+        if 'bd' in col.lower() and 'margin' in col.lower():
             return col
     return None
 
@@ -204,18 +299,45 @@ uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
 if uploaded_file is not None:
     df = load_data(uploaded_file)
     
+    # Debug: Show available columns
+    with st.expander("🔍 Debug: Available Columns", expanded=False):
+        st.write("**All columns in your CSV file:**")
+        st.write(list(df.columns))
+        
+        broker_rate_col = find_broker_rate_column(df)
+        driver_rate_col = find_driver_rate_column(df)
+        trailer_col = find_trailer_column(df)
+        
+        st.write(f"**Detected broker rate column:** {broker_rate_col}")
+        st.write(f"**Detected driver rate column:** {driver_rate_col}")
+        st.write(f"**Detected trailer column:** {trailer_col}")
+        
+        if not broker_rate_col:
+            st.error("❌ No broker rate column found! Expected one of: 'BROKER RATE (FC) [$', 'BROKER RATE (CFC)', 'BROKER RATE'")
+        if not driver_rate_col:
+            st.error("❌ No driver rate column found! Expected one of: 'DRIVER RATE [$]', 'DRIVER RATE'")
+        if not trailer_col:
+            st.error("❌ No trailer column found! Expected one of: 'TRAILER TYPE', 'TRAILER', 'trailer_type', 'trailer'")
+    
     # Convert numeric columns from US format to float
-    numeric_columns = ['BROKER RATE', 'DRIVER RATE', 'FULL MILES TOTAL']
+    numeric_columns = ['BROKER RATE', 'FULL MILES TOTAL']
     for col in numeric_columns:
         if col in df.columns:
             df[col] = df[col].apply(parse_number)
     
-    # Convert additional billing columns if they exist
-    if 'BROKER RATE (CFC)' in df.columns:
-        df['BROKER RATE (CFC)'] = df['BROKER RATE (CFC)'].apply(parse_number)
+    # Handle driver rate column separately
+    driver_rate_col = find_driver_rate_column(df)
+    if driver_rate_col:
+        df[driver_rate_col] = df[driver_rate_col].apply(parse_number)
     
-    if 'BD MARGIN' in df.columns:
-        df['BD MARGIN'] = df['BD MARGIN'].apply(parse_number)
+    # Convert additional billing columns if they exist
+    broker_rate_col = find_broker_rate_column(df)
+    if broker_rate_col:
+        df[broker_rate_col] = df[broker_rate_col].apply(parse_number)
+    
+    bd_margin_col = find_bd_margin_column(df)
+    if bd_margin_col:
+        df[bd_margin_col] = df[bd_margin_col].apply(parse_number)
     
     # Define valid statuses for both billing and driver pay
     valid_statuses = ['Booked', 'Delivered', 'On dispute', 'TONU Received']
@@ -223,12 +345,51 @@ if uploaded_file is not None:
     # Filter data for valid loads only
     valid_loads = df[df['LOAD STATUS'].isin(valid_statuses)].copy()
     
+    # Calculate week start dates for all data to enable week filtering
+    if 'DELIVERY DATE' in valid_loads.columns:
+        valid_loads['DELIVERY DATE'] = pd.to_datetime(valid_loads['DELIVERY DATE'], errors='coerce')
+        valid_loads = valid_loads[valid_loads['DELIVERY DATE'].notna()].copy()
+        
+        def get_week_start(date):
+            if pd.isna(date):
+                return pd.NaT
+            # Find the most recent Tuesday (weekday 1)
+            days_since_tuesday = (date.weekday() - 1) % 7
+            return date - timedelta(days=days_since_tuesday)
+        
+        valid_loads['WEEK_START'] = valid_loads['DELIVERY DATE'].apply(get_week_start)
+        
+        # Get available weeks for selection
+        available_weeks = sorted(valid_loads['WEEK_START'].unique())
+        week_labels = [f"{week.strftime('%m/%d/%Y')} - {(week + timedelta(days=6)).strftime('%m/%d/%Y')}" for week in available_weeks]
+        
+        # Week selection filter
+        st.sidebar.subheader("📅 Week Selection")
+        selected_weeks = st.sidebar.multiselect(
+            "Select Weeks (Tuesday-Monday)",
+            options=week_labels,
+            default=week_labels,  # Select all weeks by default
+            help="Select specific weeks to analyze. Each week runs from Tuesday to Monday."
+        )
+        
+        # Filter data for selected weeks
+        if selected_weeks:
+            selected_week_starts = [available_weeks[i] for i, label in enumerate(week_labels) if label in selected_weeks]
+            valid_loads = valid_loads[valid_loads['WEEK_START'].isin(selected_week_starts)].copy()
+        else:
+            st.warning("⚠️ Please select at least one week to analyze.")
+            st.stop()
+    else:
+        # If no delivery date column, create a dummy selected_weeks variable
+        selected_weeks = []
+    
     # Sidebar filters
-    if 'DISPATCH NAME' in df.columns:
-        dispatchers = ['All'] + list(df['DISPATCH NAME'].unique())
+    dispatcher_col = find_dispatcher_column(df)
+    if dispatcher_col:
+        dispatchers = ['All'] + list(df[dispatcher_col].unique())
         selected_dispatcher = st.sidebar.selectbox("Select Dispatcher", dispatchers)
         if selected_dispatcher != 'All':
-            valid_loads = valid_loads[valid_loads['DISPATCH NAME'] == selected_dispatcher]
+            valid_loads = valid_loads[valid_loads[dispatcher_col] == selected_dispatcher]
     
     miles_col = find_column(df, 'FULL MILES TOTAL')
     if miles_col:
@@ -241,22 +402,94 @@ if uploaded_file is not None:
         else:
             miles_col = None
     
-    if 'TRAILER TYPE' in df.columns:
-        trailer_types = ['All'] + [str(t).replace('DryVan', 'Dry Van') for t in df['TRAILER TYPE'] if isinstance(t, str)]
+    trailer_col = find_trailer_column(df)
+    if trailer_col:
+        trailer_types = ['All'] + [str(t).replace('DryVan', 'Dry Van') for t in df[trailer_col] if isinstance(t, str)]
         selected_trailer = st.sidebar.selectbox("Select Trailer Type", trailer_types)
         if selected_trailer != 'All':
-            valid_loads = valid_loads[valid_loads['TRAILER TYPE'].replace({'DryVan': 'Dry Van'}) == selected_trailer]
+            valid_loads = valid_loads[valid_loads[trailer_col].replace({'DryVan': 'Dry Van'}) == selected_trailer]
     
     if 'LOAD\'S CARRIER COMPANY' in df.columns:
         carriers = ['All'] + list(df['LOAD\'S CARRIER COMPANY'].unique())
         selected_carrier = st.sidebar.selectbox("Select Carrier", carriers)
         if selected_carrier != 'All':
             valid_loads = valid_loads[valid_loads['LOAD\'S CARRIER COMPANY'] == selected_carrier]
+    
+    # RPM Target Configuration
+    st.sidebar.subheader("💰 Revenue per Mile Targets")
+    flatbed_rpm_target = st.sidebar.number_input(
+        "Flatbed/Stepdeck RPM Target ($)",
+        min_value=0.0,
+        max_value=10.0,
+        value=2.0,
+        step=0.1,
+        help="Target revenue per mile for Flatbed/Stepdeck trailers"
+    )
+    dryvan_rpm_target = st.sidebar.number_input(
+        "Dry Van/Reefer/Power Only RPM Target ($)",
+        min_value=0.0,
+        max_value=10.0,
+        value=1.8,
+        step=0.1,
+        help="Target revenue per mile for Dry Van/Reefer/Power Only trailers"
+    )
 
     # Main dashboard
     st.header("📊 Key Performance Indicators")
     
-    # KPI Cards
+    # Show KPI data for each selected week individually
+    if len(selected_weeks) > 1:
+        st.subheader("📈 KPI by Week")
+        
+        # Group by week and calculate KPIs
+        # Use any available column for counting loads (could be index or any unique identifier)
+        count_column = None
+        for col in ['LOAD ID', 'LOAD_ID', 'load_id', 'Load ID']:
+            if col in valid_loads.columns:
+                count_column = col
+                break
+        
+        if count_column is None:
+            # If no load ID column found, use the index for counting
+            broker_rate_col = find_broker_rate_column(valid_loads)
+            driver_rate_col = find_driver_rate_column(valid_loads)
+            weekly_kpis = valid_loads.groupby('WEEK_START').agg({
+                broker_rate_col: 'sum',
+                driver_rate_col: 'sum'
+            }).reset_index()
+            weekly_kpis['LOAD_COUNT'] = valid_loads.groupby('WEEK_START').size().values
+        else:
+            broker_rate_col = find_broker_rate_column(valid_loads)
+            driver_rate_col = find_driver_rate_column(valid_loads)
+            weekly_kpis = valid_loads.groupby('WEEK_START').agg({
+                count_column: 'count',
+                broker_rate_col: 'sum',
+                driver_rate_col: 'sum'
+            }).reset_index()
+            weekly_kpis = weekly_kpis.rename(columns={count_column: 'LOAD_COUNT'})
+        
+        weekly_kpis['WEEK_LABEL'] = weekly_kpis['WEEK_START'].apply(
+            lambda x: f"{x.strftime('%m/%d/%Y')} - {(x + timedelta(days=6)).strftime('%m/%d/%Y')}"
+        )
+        broker_rate_col = find_broker_rate_column(valid_loads)
+        driver_rate_col = find_driver_rate_column(valid_loads)
+        weekly_kpis['GROSS_MARGIN'] = ((weekly_kpis[broker_rate_col] - weekly_kpis[driver_rate_col]) / weekly_kpis[broker_rate_col] * 100).round(1)
+        
+        # Display weekly KPIs in a table
+        broker_rate_col = find_broker_rate_column(valid_loads)
+        driver_rate_col = find_driver_rate_column(valid_loads)
+        kpi_display = weekly_kpis[['WEEK_LABEL', 'LOAD_COUNT', broker_rate_col, driver_rate_col, 'GROSS_MARGIN']].copy()
+        kpi_display.columns = ['Week Period', 'Total Loads', 'Total Billing', 'Total Driver Pay', 'B-Rate %']
+        kpi_display['Total Billing'] = kpi_display['Total Billing'].apply(lambda x: f"${x:,.0f}")
+        kpi_display['Total Driver Pay'] = kpi_display['Total Driver Pay'].apply(lambda x: f"${x:,.0f}")
+        kpi_display['B-Rate %'] = kpi_display['B-Rate %'].apply(lambda x: f"{x:.1f}%")
+        
+        st.dataframe(kpi_display, use_container_width=True)
+        
+        # Show overall totals
+        st.subheader("📊 Overall Totals (All Selected Weeks)")
+    
+    # KPI Cards (overall totals)
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -264,19 +497,30 @@ if uploaded_file is not None:
         st.metric("Total Valid Loads", f"{total_loads:,}")
     
     with col2:
-        total_billing = valid_loads['BROKER RATE (CFC)'].sum()
-        st.metric("Total Billing", f"${total_billing:,.0f}")
+        broker_rate_col = find_broker_rate_column(valid_loads)
+        if broker_rate_col:
+            total_billing = valid_loads[broker_rate_col].sum()
+            st.metric("Total Billing", f"${total_billing:,.0f}")
+        else:
+            st.error("❌ Broker rate column not found!")
+            st.write("Available columns:", list(valid_loads.columns))
+            st.metric("Total Billing", "N/A")
     
     with col3:
-        total_driver_pay = valid_loads['DRIVER RATE'].sum()
-        st.metric("Total Driver Pay", f"${total_driver_pay:,.0f}")
+        driver_rate_col = find_driver_rate_column(valid_loads)
+        if driver_rate_col:
+            total_driver_pay = valid_loads[driver_rate_col].sum()
+            st.metric("Total Driver Pay", f"${total_driver_pay:,.0f}")
+        else:
+            st.error("❌ Driver rate column not found!")
+            st.metric("Total Driver Pay", "N/A")
     
     with col4:
-        if total_billing > 0:
+        if broker_rate_col and driver_rate_col and total_billing > 0:
             margin_percentage = ((total_billing - total_driver_pay) / total_billing * 100)
-            st.metric("Gross Margin %", f"{margin_percentage:.1f}%")
+            st.metric("B-Rate %", f"{margin_percentage:.1f}%")
         else:
-            st.metric("Gross Margin %", "N/A")
+            st.metric("B-Rate %", "N/A")
 
     # Driver Income KPI Section
     st.header("💰 Driver Income Analysis")
@@ -295,11 +539,53 @@ if uploaded_file is not None:
         **Please check your CSV file has a 'DELIVERY DATE' column with valid dates.**
         """)
     else:
-        # Driver Income KPI Cards
+        # Show driver income data for each selected week individually
+        if len(selected_weeks) > 1:
+            st.subheader("📈 Driver Income by Week")
+            
+            # Group by week and calculate driver income metrics
+            driver_rate_col = find_driver_rate_column(weekly_earnings)
+            weekly_driver_metrics = weekly_earnings.groupby('WEEK_START').agg({
+                driver_rate_col: ['mean', 'sum'],
+                'PERCENTAGE_TO_TARGET': 'mean',
+                'DRIVER NAME': 'nunique'
+            }).reset_index()
+            
+            weekly_driver_metrics.columns = ['WEEK_START', 'AVG_WEEKLY_EARNINGS', 'TOTAL_WEEKLY_EARNINGS', 'AVG_PERCENTAGE_TO_TARGET', 'UNIQUE_DRIVERS']
+            weekly_driver_metrics['WEEK_LABEL'] = weekly_driver_metrics['WEEK_START'].apply(
+                lambda x: f"{x.strftime('%m/%d/%Y')} - {(x + timedelta(days=6)).strftime('%m/%d/%Y')}"
+            )
+            
+            # Calculate drivers above target for each week
+            drivers_above_target_by_week = []
+            for week_start in weekly_driver_metrics['WEEK_START']:
+                week_data = weekly_earnings[weekly_earnings['WEEK_START'] == week_start]
+                above_target = len(week_data[week_data['PERCENTAGE_TO_TARGET'] >= 100])
+                total_drivers = len(week_data)
+                percentage = (above_target / total_drivers * 100) if total_drivers > 0 else 0
+                drivers_above_target_by_week.append(percentage)
+            
+            weekly_driver_metrics['DRIVERS_ABOVE_TARGET_PCT'] = drivers_above_target_by_week
+            
+            # Display weekly driver metrics in a table
+            driver_display = weekly_driver_metrics[['WEEK_LABEL', 'UNIQUE_DRIVERS', 'AVG_WEEKLY_EARNINGS', 'TOTAL_WEEKLY_EARNINGS', 'DRIVERS_ABOVE_TARGET_PCT', 'AVG_PERCENTAGE_TO_TARGET']].copy()
+            driver_display.columns = ['Week Period', 'Unique Drivers', 'Avg Weekly Earnings', 'Total Weekly Earnings', 'Drivers Above Target %', 'Avg % to Target']
+            driver_display['Avg Weekly Earnings'] = driver_display['Avg Weekly Earnings'].apply(lambda x: f"${x:,.0f}")
+            driver_display['Total Weekly Earnings'] = driver_display['Total Weekly Earnings'].apply(lambda x: f"${x:,.0f}")
+            driver_display['Drivers Above Target %'] = driver_display['Drivers Above Target %'].apply(lambda x: f"{x:.1f}%")
+            driver_display['Avg % to Target'] = driver_display['Avg % to Target'].apply(lambda x: f"{x:.1f}%")
+            
+            st.dataframe(driver_display, use_container_width=True)
+            
+            # Show overall totals
+            st.subheader("📊 Overall Driver Income Totals (All Selected Weeks)")
+        
+        # Driver Income KPI Cards (overall totals)
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            avg_weekly_earnings = weekly_earnings['DRIVER RATE'].mean()
+            driver_rate_col = find_driver_rate_column(weekly_earnings)
+            avg_weekly_earnings = weekly_earnings[driver_rate_col].mean()
             st.metric("Avg Weekly Earnings", f"${avg_weekly_earnings:,.0f}")
         
         with col2:
@@ -309,17 +595,20 @@ if uploaded_file is not None:
             st.metric("Drivers Above Target", f"{target_percentage:.1f}%")
         
         with col3:
-            flatbed_avg = weekly_earnings[weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]['DRIVER RATE'].mean()
+            trailer_col = find_trailer_column(weekly_earnings)
+            flatbed_avg = weekly_earnings[weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])][driver_rate_col].mean()
             st.metric("Flatbed/Stepdeck Avg", f"${flatbed_avg:,.0f}")
         
         with col4:
-            other_avg = weekly_earnings[~weekly_earnings['TRAILER TYPE'].isin(['Flatbed', 'Stepdeck'])]['DRIVER RATE'].mean()
+            other_avg = weekly_earnings[~weekly_earnings[trailer_col].isin(['Flatbed', 'Stepdeck'])][driver_rate_col].mean()
             st.metric("Other Trailers Avg", f"${other_avg:,.0f}")
         
         # Weekly Earnings Table
         st.subheader("📋 Weekly Driver Earnings by Trailer Type")
-        weekly_summary = weekly_earnings.groupby(['TRAILER TYPE', 'WEEK_START']).agg({
-            'DRIVER RATE': 'sum',
+        driver_rate_col = find_driver_rate_column(weekly_earnings)
+        trailer_col = find_trailer_column(weekly_earnings)
+        weekly_summary = weekly_earnings.groupby([trailer_col, 'WEEK_START']).agg({
+            driver_rate_col: 'sum',
             'DRIVER NAME': 'count',
             'PERCENTAGE_TO_TARGET': 'mean'
         }).reset_index()
@@ -353,25 +642,47 @@ if uploaded_file is not None:
         st.markdown(summary_md)
         # --- End summary table ---
 
-        # Weekly Driver Performance Charts (Collapsible)
-        with st.expander("📊 Weekly Driver Performance Charts", expanded=False):
-            # Weekly Driver Earnings vs Target by Trailer Type
-            st.subheader("📊 Weekly Driver Earnings vs Target by Trailer Type (Faceted)")
+        # Weekly Driver Performance Charts (Separate Expanders)
+        
+        # Weekly Driver Earnings vs Target by Trailer Type
+        with st.expander("📊 Weekly Driver Earnings vs Target by Trailer Type", expanded=False):
+            # Add earnings performance summary above chart
+            from enhanced_visualizer import generate_driver_performance_summary
+            earnings_summary = generate_driver_performance_summary(weekly_earnings, "earnings")
+            st.markdown(f"""
+            **🚦 Driver Performance Summary (Earnings):**
+            {earnings_summary}
+            """)
+            
             fig_faceted = plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings)
             st.plotly_chart(fig_faceted, use_container_width=True)
 
-            # Weekly Driver Miles vs Target by Trailer Type
-            st.subheader("📊 Weekly Driver Miles vs Target by Trailer Type (Faceted)")
+        # Weekly Driver Miles vs Target by Trailer Type
+        with st.expander("📊 Weekly Driver Miles vs Target by Trailer Type", expanded=False):
             if miles_col:
+                # Add miles performance summary above chart
+                miles_summary = generate_driver_performance_summary(weekly_earnings, "miles")
+                st.markdown(f"""
+                **🚦 Driver Performance Summary (Miles):**
+                {miles_summary}
+                """)
+                
                 fig_miles = plot_weekly_driver_miles_vs_target_faceted(weekly_earnings, miles_col=miles_col)
                 st.plotly_chart(fig_miles, use_container_width=True)
             else:
                 st.warning("⚠️ Miles chart not available - no miles column found in the data")
 
-            # Weekly Driver Revenue per Mile vs Target by Trailer Type
-            st.subheader("📊 Weekly Driver Revenue per Mile vs Target by Trailer Type (Faceted)")
+        # Weekly Driver Revenue per Mile vs Target by Trailer Type
+        with st.expander("📊 Weekly Driver Revenue per Mile vs Target by Trailer Type", expanded=False):
             if miles_col:
-                fig_revenue_per_mile = plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col=miles_col)
+                # Add revenue per mile performance summary above chart
+                revenue_summary = generate_driver_performance_summary(weekly_earnings, "revenue_per_mile", flatbed_rpm_target, dryvan_rpm_target)
+                st.markdown(f"""
+                **🚦 Driver Performance Summary (Revenue per Mile):**
+                {revenue_summary}
+                """)
+                
+                fig_revenue_per_mile = plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col=miles_col, flatbed_rpm_target=flatbed_rpm_target, dryvan_rpm_target=dryvan_rpm_target)
                 st.plotly_chart(fig_revenue_per_mile, use_container_width=True)
             else:
                 st.warning("⚠️ Revenue per mile chart not available - no miles column found in the data")
@@ -482,17 +793,6 @@ if uploaded_file is not None:
     # Add spacing between rows
     st.markdown("<br><br>", unsafe_allow_html=True)
     
-    # Row 5: Miles Analysis
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Driver Miles Heatmap")
-        fig9 = plot_driver_miles_heatmap(valid_loads)
-        st.plotly_chart(fig9, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis9 = generate_chart_analysis("driver_heatmap", valid_loads)
-            st.markdown(analysis9)
-    
     # Add spacing between rows
     st.markdown("<br><br>", unsafe_allow_html=True)
     
@@ -541,8 +841,13 @@ if uploaded_file is not None:
     with col1:
         if st.button("📊 Export Summary Report"):
             # Create summary report
+            total_loads = len(valid_loads)
+            total_billing = valid_loads[broker_rate_col].sum() if broker_rate_col else 0
+            total_driver_pay = valid_loads[driver_rate_col].sum() if driver_rate_col else 0
+            margin_percentage = ((total_billing - total_driver_pay) / total_billing * 100) if total_billing > 0 else 0
+            
             summary_data = {
-                'Metric': ['Total Loads', 'Total Billing', 'Total Driver Pay', 'Gross Margin %'],
+                'Metric': ['Total Loads', 'Total Billing', 'Total Driver Pay', 'B-Rate %'],
                 'Value': [total_loads, f"${total_billing:,.0f}", f"${total_driver_pay:,.0f}", f"{margin_percentage:.1f}%"]
             }
             summary_df = pd.DataFrame(summary_data)
@@ -554,13 +859,19 @@ if uploaded_file is not None:
             )
     
     with col2:
-        if st.button("📈 Export Dispatcher Analysis"):
-            dispatcher_analysis = valid_loads.groupby('DISPATCH NAME').agg({
-                'BROKER RATE (CFC)': 'sum',
-                'DRIVER RATE': 'sum',
+        # Dispatcher Analysis
+        dispatcher_col = find_dispatcher_column(valid_loads)
+        broker_rate_col = find_broker_rate_column(valid_loads)
+        driver_rate_col = find_driver_rate_column(valid_loads)
+        bd_margin_col = find_bd_margin_column(valid_loads)
+        if dispatcher_col and broker_rate_col and driver_rate_col and bd_margin_col:
+            dispatcher_analysis = valid_loads.groupby(dispatcher_col).agg({
+                broker_rate_col: 'sum',
+                driver_rate_col: 'sum',
+                bd_margin_col: 'sum',
                 'LOAD ID': 'count'
             }).reset_index()
-            dispatcher_analysis.columns = ['Dispatcher', 'Total Billing', 'Total Driver Pay', 'Load Count']
+            dispatcher_analysis.columns = ['Dispatcher', 'Total Billing', 'Total Driver Pay', 'Total BD Margin', 'Load Count']
             st.download_button(
                 label="Download Dispatcher Analysis",
                 data=dispatcher_analysis.to_csv(index=False),
@@ -571,7 +882,7 @@ if uploaded_file is not None:
     with col3:
         if st.button("🚛 Export Driver Analysis"):
             driver_analysis = valid_loads.groupby('DRIVER NAME').agg({
-                'DRIVER RATE': 'sum',
+                'DRIVER RATE [$]': 'sum',
                 'FULL MILES TOTAL': 'sum',
                 'LOAD ID': 'count'
             }).reset_index()
@@ -591,11 +902,11 @@ else:
     
     The application expects CSV files with the following columns:
     - `LOAD ID`: Unique load identifier
-    - `DISPATCH NAME`: Name of the dispatcher
-    - `BROKER RATE (CFC)`: Broker rate amount
-    - `DRIVER RATE`: Driver pay amount
+    - `DISPATCH NAME` or `FC NAME`: Name of the dispatcher
+    - `BROKER RATE (FC) [$` or `BROKER RATE (CFC)`: Broker rate amount
+    - `DRIVER RATE [$]` or `DRIVER RATE`: Driver pay amount
     - `DRIVER NAME`: Name of the driver
-    - `TRAILER TYPE`: Type of trailer used
+    - `TRAILER TYPE` or `TRAILER`: Type of trailer used
     - `LOAD STATUS`: Status of the load (Booked, Delivered, etc.)
     - `LOAD'S CARRIER COMPANY`: Carrier company name
     - `FULL MILES TOTAL`: Total miles for the load
