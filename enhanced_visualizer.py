@@ -2039,3 +2039,399 @@ def find_bd_margin_column(df):
         if 'bd' in col.lower() and 'margin' in col.lower():
             return col
     return None
+
+def create_week_over_week_comparison(weekly_kpis, current_week=None):
+    """
+    Create a side-by-side week-over-week comparison dashboard.
+    
+    Args:
+        weekly_kpis: DataFrame with weekly KPI data
+        current_week: Current week to compare against (defaults to most recent)
+    
+    Returns:
+        Plotly figure with side-by-side comparison
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    import numpy as np
+    
+    if weekly_kpis.empty or len(weekly_kpis) < 2:
+        return go.Figure().add_annotation(
+            text="Insufficient data for week-over-week comparison (need at least 2 weeks)",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+        )
+    
+    # Sort by week start date
+    weekly_kpis = weekly_kpis.sort_values('WEEK_START').reset_index(drop=True)
+    
+    # Determine current and previous week
+    if current_week is None:
+        current_week = weekly_kpis['WEEK_START'].iloc[-1]
+    
+    current_data = weekly_kpis[weekly_kpis['WEEK_START'] == current_week]
+    if current_data.empty:
+        current_week = weekly_kpis['WEEK_START'].iloc[-1]
+        current_data = weekly_kpis[weekly_kpis['WEEK_START'] == current_week]
+    
+    # Find previous week
+    previous_week = weekly_kpis[weekly_kpis['WEEK_START'] < current_week]['WEEK_START'].iloc[-1] if len(weekly_kpis[weekly_kpis['WEEK_START'] < current_week]) > 0 else None
+    
+    if previous_week is None:
+        return go.Figure().add_annotation(
+            text="No previous week data available for comparison",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+        )
+    
+    previous_data = weekly_kpis[weekly_kpis['WEEK_START'] == previous_week]
+    
+    # Get column names
+    broker_rate_col = find_broker_rate_column(weekly_kpis)
+    driver_rate_col = find_driver_rate_column(weekly_kpis)
+    
+    if not broker_rate_col or not driver_rate_col:
+        return go.Figure().add_annotation(
+            text="Required rate columns not found for comparison",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+        )
+    
+    # Extract values
+    current_loads = current_data['LOAD_COUNT'].iloc[0] if 'LOAD_COUNT' in current_data.columns else 0
+    current_billing = current_data[broker_rate_col].iloc[0]
+    current_driver_pay = current_data[driver_rate_col].iloc[0]
+    current_margin = current_data['GROSS_MARGIN'].iloc[0] if 'GROSS_MARGIN' in current_data.columns else 0
+    
+    previous_loads = previous_data['LOAD_COUNT'].iloc[0] if 'LOAD_COUNT' in previous_data.columns else 0
+    previous_billing = previous_data[broker_rate_col].iloc[0]
+    previous_driver_pay = previous_data[driver_rate_col].iloc[0]
+    previous_margin = previous_data['GROSS_MARGIN'].iloc[0] if 'GROSS_MARGIN' in previous_data.columns else 0
+    
+    # Calculate changes
+    loads_change = ((current_loads - previous_loads) / previous_loads * 100) if previous_loads > 0 else 0
+    billing_change = ((current_billing - previous_billing) / previous_billing * 100) if previous_billing > 0 else 0
+    driver_pay_change = ((current_driver_pay - previous_driver_pay) / previous_driver_pay * 100) if previous_driver_pay > 0 else 0
+    margin_change = current_margin - previous_margin
+    
+    # Create subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            f'Load Count: {current_loads} vs {previous_loads}',
+            f'Total Billing: ${current_billing:,.0f} vs ${previous_billing:,.0f}',
+            f'Driver Pay: ${current_driver_pay:,.0f} vs ${previous_driver_pay:,.0f}',
+            f'B-Rate %: {current_margin:.1f}% vs {previous_margin:.1f}%'
+        ),
+        specs=[[{"type": "indicator"}, {"type": "indicator"}],
+               [{"type": "indicator"}, {"type": "indicator"}]]
+    )
+    
+    # Define colors based on performance
+    def get_color(value, is_margin=False):
+        if is_margin:
+            return 'green' if value >= 0 else 'red'
+        return 'green' if value >= 0 else 'red'
+    
+    # Load Count Comparison
+    fig.add_trace(go.Indicator(
+        mode="gauge+number+delta",
+        value=current_loads,
+        delta={'reference': previous_loads, 'relative': True, 'valueformat': '.1%'},
+        gauge={'axis': {'range': [None, max(current_loads, previous_loads) * 1.2]},
+               'bar': {'color': get_color(loads_change)},
+               'steps': [{'range': [0, previous_loads], 'color': "lightgray"}],
+               'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': previous_loads}},
+        title={'text': "Load Count"},
+        domain={'row': 0, 'column': 0}
+    ))
+    
+    # Billing Comparison
+    fig.add_trace(go.Indicator(
+        mode="gauge+number+delta",
+        value=current_billing,
+        delta={'reference': previous_billing, 'relative': True, 'valueformat': '.1%'},
+        gauge={'axis': {'range': [None, max(current_billing, previous_billing) * 1.2]},
+               'bar': {'color': get_color(billing_change)},
+               'steps': [{'range': [0, previous_billing], 'color': "lightgray"}],
+               'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': previous_billing}},
+        title={'text': "Total Billing ($)"},
+        domain={'row': 0, 'column': 1}
+    ))
+    
+    # Driver Pay Comparison
+    fig.add_trace(go.Indicator(
+        mode="gauge+number+delta",
+        value=current_driver_pay,
+        delta={'reference': previous_driver_pay, 'relative': True, 'valueformat': '.1%'},
+        gauge={'axis': {'range': [None, max(current_driver_pay, previous_driver_pay) * 1.2]},
+               'bar': {'color': get_color(driver_pay_change)},
+               'steps': [{'range': [0, previous_driver_pay], 'color': "lightgray"}],
+               'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': previous_driver_pay}},
+        title={'text': "Driver Pay ($)"},
+        domain={'row': 1, 'column': 0}
+    ))
+    
+    # Margin Comparison
+    fig.add_trace(go.Indicator(
+        mode="gauge+number+delta",
+        value=current_margin,
+        delta={'reference': previous_margin, 'relative': False, 'valueformat': '.1f'},
+        gauge={'axis': {'range': [0, 100]},
+               'bar': {'color': get_color(margin_change, True)},
+               'steps': [{'range': [0, previous_margin], 'color': "lightgray"}],
+               'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': previous_margin}},
+        title={'text': "B-Rate %"},
+        domain={'row': 1, 'column': 1}
+    ))
+    
+    # Update layout
+    current_week_label = current_data['WEEK_LABEL'].iloc[0] if 'WEEK_LABEL' in current_data.columns else current_week.strftime('%m/%d/%Y')
+    previous_week_label = previous_data['WEEK_LABEL'].iloc[0] if 'WEEK_LABEL' in previous_data.columns else previous_week.strftime('%m/%d/%Y')
+    
+    fig.update_layout(
+        title=f"Week-over-Week Comparison: {current_week_label} vs {previous_week_label}",
+        height=600,
+        showlegend=False,
+        template='plotly_white'
+    )
+    
+    return fig
+
+def create_sparkline_trends(weekly_kpis, kpi_columns=None, num_weeks=8):
+    """
+    Create sparkline trend charts for KPIs showing recent performance.
+    
+    Args:
+        weekly_kpis: DataFrame with weekly KPI data
+        kpi_columns: List of KPI columns to show trends for
+        num_weeks: Number of recent weeks to show in sparklines
+    
+    Returns:
+        Plotly figure with sparkline trends
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    import numpy as np
+    
+    if weekly_kpis.empty or len(weekly_kpis) < 2:
+        return go.Figure().add_annotation(
+            text="Insufficient data for trend analysis (need at least 2 weeks)",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+        )
+    
+    # Sort by week start date
+    weekly_kpis = weekly_kpis.sort_values('WEEK_START').reset_index(drop=True)
+    
+    # Define default KPI columns if not provided
+    if kpi_columns is None:
+        broker_rate_col = find_broker_rate_column(weekly_kpis)
+        driver_rate_col = find_driver_rate_column(weekly_kpis)
+        kpi_columns = ['LOAD_COUNT', broker_rate_col, driver_rate_col, 'GROSS_MARGIN']
+        kpi_columns = [col for col in kpi_columns if col in weekly_kpis.columns]
+    
+    # Limit to specified number of weeks for sparklines
+    recent_data = weekly_kpis.tail(num_weeks).copy()
+    
+    if len(recent_data) < 2:
+        return go.Figure().add_annotation(
+            text="Insufficient recent data for trend analysis",
+            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+        )
+    
+    # Create subplots
+    n_cols = len(kpi_columns)
+    fig = make_subplots(
+        rows=1, cols=n_cols,
+        subplot_titles=[col.replace('_', ' ').title() for col in kpi_columns],
+        specs=[[{"type": "scatter"} for _ in range(n_cols)]]
+    )
+    
+    # Define colors for trends
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    
+    for i, col in enumerate(kpi_columns):
+        if col not in recent_data.columns:
+            continue
+            
+        # Calculate trend
+        values = recent_data[col].values
+        trend = np.polyfit(range(len(values)), values, 1)[0]
+        
+        # Determine color based on trend
+        if trend > 0:
+            line_color = 'green'
+        elif trend < 0:
+            line_color = 'red'
+        else:
+            line_color = 'gray'
+        
+        # Create sparkline
+        fig.add_trace(go.Scatter(
+            x=recent_data['WEEK_LABEL'] if 'WEEK_LABEL' in recent_data.columns else range(len(values)),
+            y=values,
+            mode='lines+markers',
+            name=col.replace('_', ' ').title(),
+            line=dict(color=line_color, width=2),
+            marker=dict(size=4),
+            showlegend=False,
+            hovertemplate=f'{col.replace("_", " ").title()}: %{{y:,.0f}}<extra></extra>'
+        ), row=1, col=i+1)
+        
+        # Add trend indicator
+        current_value = values[-1]
+        previous_value = values[-2] if len(values) > 1 else values[0]
+        change_pct = ((current_value - previous_value) / previous_value * 100) if previous_value != 0 else 0
+        
+        # Add annotation for trend
+        fig.add_annotation(
+            x=0.5, y=0.9,
+            xref=f'x{i+1} domain', yref=f'y{i+1} domain',
+            text=f"{change_pct:+.1f}%",
+            showarrow=False,
+            font=dict(color=line_color, size=12, weight='bold'),
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor=line_color,
+            borderwidth=1
+        )
+        
+        # Update subplot layout
+        fig.update_xaxes(showticklabels=False, row=1, col=i+1)
+        fig.update_yaxes(showticklabels=False, row=1, col=i+1)
+    
+    fig.update_layout(
+        title="Recent KPI Trends (Last 8 Weeks)",
+        height=200,
+        showlegend=False,
+        template='plotly_white',
+        margin=dict(l=20, r=20, t=40, b=20)
+    )
+    
+    return fig
+
+def create_weekly_comparison_table(weekly_kpis, num_weeks=8):
+    """
+    Create an interactive table showing weekly comparisons with drill-down capability.
+    
+    Args:
+        weekly_kpis: DataFrame with weekly KPI data
+        num_weeks: Number of recent weeks to show
+    
+    Returns:
+        DataFrame formatted for display
+    """
+    if weekly_kpis.empty:
+        return pd.DataFrame()
+    
+    # Sort by week start date and get recent weeks
+    weekly_kpis = weekly_kpis.sort_values('WEEK_START').reset_index(drop=True)
+    recent_data = weekly_kpis.tail(num_weeks).copy()
+    
+    # Get column names
+    broker_rate_col = find_broker_rate_column(recent_data)
+    driver_rate_col = find_driver_rate_column(recent_data)
+    
+    if not broker_rate_col or not driver_rate_col:
+        return pd.DataFrame()
+    
+    # Create comparison table
+    comparison_table = recent_data[['WEEK_LABEL', 'LOAD_COUNT', broker_rate_col, driver_rate_col, 'GROSS_MARGIN']].copy()
+    
+    # Calculate week-over-week changes
+    for col in ['LOAD_COUNT', broker_rate_col, driver_rate_col, 'GROSS_MARGIN']:
+        if col in comparison_table.columns:
+            comparison_table[f'{col}_Change'] = comparison_table[col].pct_change() * 100
+            comparison_table[f'{col}_Change'] = comparison_table[f'{col}_Change'].fillna(0)
+    
+    # Format columns for display
+    comparison_table['Week'] = comparison_table['WEEK_LABEL']
+    comparison_table['Loads'] = comparison_table['LOAD_COUNT'].astype(int)
+    comparison_table['Billing'] = comparison_table[broker_rate_col].apply(lambda x: f"${x:,.0f}")
+    comparison_table['Driver_Pay'] = comparison_table[driver_rate_col].apply(lambda x: f"${x:,.0f}")
+    comparison_table['B_Rate_%'] = comparison_table['GROSS_MARGIN'].apply(lambda x: f"{x:.1f}%")
+    
+    # Format change columns
+    comparison_table['Loads_Change'] = comparison_table['LOAD_COUNT_Change'].apply(lambda x: f"{x:+.1f}%" if not pd.isna(x) else "N/A")
+    comparison_table['Billing_Change'] = comparison_table[f'{broker_rate_col}_Change'].apply(lambda x: f"{x:+.1f}%" if not pd.isna(x) else "N/A")
+    comparison_table['Driver_Pay_Change'] = comparison_table[f'{driver_rate_col}_Change'].apply(lambda x: f"{x:+.1f}%" if not pd.isna(x) else "N/A")
+    comparison_table['B_Rate_Change'] = comparison_table['GROSS_MARGIN_Change'].apply(lambda x: f"{x:+.1f}%" if not pd.isna(x) else "N/A")
+    
+    # Select display columns
+    display_columns = ['Week', 'Loads', 'Loads_Change', 'Billing', 'Billing_Change', 
+                      'Driver_Pay', 'Driver_Pay_Change', 'B_Rate_%', 'B_Rate_Change']
+    
+    return comparison_table[display_columns]
+
+def generate_week_over_week_insights(weekly_kpis):
+    """
+    Generate insights and recommendations based on week-over-week performance.
+    
+    Args:
+        weekly_kpis: DataFrame with weekly KPI data
+    
+    Returns:
+        String with insights and recommendations
+    """
+    if weekly_kpis.empty or len(weekly_kpis) < 2:
+        return "Insufficient data for week-over-week analysis."
+    
+    # Sort by week start date
+    weekly_kpis = weekly_kpis.sort_values('WEEK_START').reset_index(drop=True)
+    
+    # Get column names
+    broker_rate_col = find_broker_rate_column(weekly_kpis)
+    driver_rate_col = find_driver_rate_column(weekly_kpis)
+    
+    if not broker_rate_col or not driver_rate_col:
+        return "Required rate columns not found for analysis."
+    
+    # Get current and previous week
+    current_week = weekly_kpis.iloc[-1]
+    previous_week = weekly_kpis.iloc[-2]
+    
+    # Calculate changes
+    loads_change = ((current_week['LOAD_COUNT'] - previous_week['LOAD_COUNT']) / previous_week['LOAD_COUNT'] * 100) if previous_week['LOAD_COUNT'] > 0 else 0
+    billing_change = ((current_week[broker_rate_col] - previous_week[broker_rate_col]) / previous_week[broker_rate_col] * 100) if previous_week[broker_rate_col] > 0 else 0
+    driver_pay_change = ((current_week[driver_rate_col] - previous_week[driver_rate_col]) / previous_week[driver_rate_col] * 100) if previous_week[driver_rate_col] > 0 else 0
+    margin_change = current_week['GROSS_MARGIN'] - previous_week['GROSS_MARGIN']
+    
+    # Generate insights
+    insights = []
+    
+    # Load count insights
+    if loads_change > 10:
+        insights.append(f"🚀 **Load volume increased significantly** (+{loads_change:.1f}%) - Consider capacity planning for sustained growth")
+    elif loads_change < -10:
+        insights.append(f"⚠️ **Load volume decreased** ({loads_change:.1f}%) - Investigate market conditions and sales pipeline")
+    elif abs(loads_change) <= 5:
+        insights.append(f"📊 **Load volume stable** ({loads_change:+.1f}%) - Consistent operations maintained")
+    
+    # Billing insights
+    if billing_change > 10:
+        insights.append(f"💰 **Revenue growth strong** (+{billing_change:.1f}%) - Excellent market positioning")
+    elif billing_change < -10:
+        insights.append(f"📉 **Revenue decline** ({billing_change:.1f}%) - Review pricing strategy and market conditions")
+    
+    # Driver pay insights
+    if driver_pay_change > 10:
+        insights.append(f"👥 **Driver compensation increased** (+{driver_pay_change:.1f}%) - Monitor driver satisfaction and retention")
+    elif driver_pay_change < -10:
+        insights.append(f"⚠️ **Driver compensation decreased** ({driver_pay_change:.1f}%) - Check driver morale and retention risk")
+    
+    # Margin insights
+    if margin_change > 2:
+        insights.append(f"✅ **Margin improved** (+{margin_change:.1f}%) - Strong operational efficiency")
+    elif margin_change < -2:
+        insights.append(f"🔴 **Margin declined** ({margin_change:.1f}%) - Review cost structure and pricing")
+    
+    # Overall performance assessment
+    positive_changes = sum([1 for change in [loads_change, billing_change, margin_change] if change > 0])
+    total_metrics = 3
+    
+    if positive_changes >= 2:
+        overall_sentiment = "🎯 **Overall Performance: Strong** - Most metrics showing positive trends"
+    elif positive_changes == 1:
+        overall_sentiment = "📊 **Overall Performance: Mixed** - Some areas need attention"
+    else:
+        overall_sentiment = "⚠️ **Overall Performance: Concerning** - Multiple metrics declining"
+    
+    insights.insert(0, overall_sentiment)
+    
+    return "\n\n".join(insights)

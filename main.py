@@ -415,6 +415,23 @@ if uploaded_file is not None:
         if selected_carrier != 'All':
             valid_loads = valid_loads[valid_loads['LOAD\'S CARRIER COMPANY'] == selected_carrier]
     
+    # Week-over-Week Comparison Configuration
+    st.sidebar.subheader("🔄 Week-over-Week Analysis")
+    enable_weekly_comparison = st.sidebar.checkbox(
+        "Enable Week-over-Week Comparison",
+        value=True,
+        help="Show detailed week-to-week performance comparisons"
+    )
+    
+    if enable_weekly_comparison:
+        comparison_weeks = st.sidebar.slider(
+            "Number of weeks for trend analysis",
+            min_value=4,
+            max_value=12,
+            value=8,
+            help="Number of recent weeks to include in trend analysis"
+        )
+    
     # RPM Target Configuration
     st.sidebar.subheader("💰 Revenue per Mile Targets")
     flatbed_rpm_target = st.sidebar.number_input(
@@ -437,43 +454,97 @@ if uploaded_file is not None:
     # Main dashboard
     st.header("📊 Key Performance Indicators")
     
-    # Show KPI data for each selected week individually
-    if len(selected_weeks) > 1:
-        st.subheader("📈 KPI by Week")
-        
-        # Group by week and calculate KPIs
-        # Use any available column for counting loads (could be index or any unique identifier)
-        count_column = None
-        for col in ['LOAD ID', 'LOAD_ID', 'load_id', 'Load ID']:
-            if col in valid_loads.columns:
-                count_column = col
-                break
-        
-        if count_column is None:
-            # If no load ID column found, use the index for counting
-            broker_rate_col = find_broker_rate_column(valid_loads)
-            driver_rate_col = find_driver_rate_column(valid_loads)
-            weekly_kpis = valid_loads.groupby('WEEK_START').agg({
-                broker_rate_col: 'sum',
-                driver_rate_col: 'sum'
-            }).reset_index()
-            weekly_kpis['LOAD_COUNT'] = valid_loads.groupby('WEEK_START').size().values
-        else:
-            broker_rate_col = find_broker_rate_column(valid_loads)
-            driver_rate_col = find_driver_rate_column(valid_loads)
-            weekly_kpis = valid_loads.groupby('WEEK_START').agg({
-                count_column: 'count',
-                broker_rate_col: 'sum',
-                driver_rate_col: 'sum'
-            }).reset_index()
-            weekly_kpis = weekly_kpis.rename(columns={count_column: 'LOAD_COUNT'})
-        
-        weekly_kpis['WEEK_LABEL'] = weekly_kpis['WEEK_START'].apply(
-            lambda x: f"{x.strftime('%m/%d/%Y')} - {(x + timedelta(days=6)).strftime('%m/%d/%Y')}"
-        )
+    # Calculate weekly KPIs for all selected weeks
+    count_column = None
+    for col in ['LOAD ID', 'LOAD_ID', 'load_id', 'Load ID']:
+        if col in valid_loads.columns:
+            count_column = col
+            break
+    
+    if count_column is None:
+        # If no load ID column found, use the index for counting
         broker_rate_col = find_broker_rate_column(valid_loads)
         driver_rate_col = find_driver_rate_column(valid_loads)
-        weekly_kpis['GROSS_MARGIN'] = ((weekly_kpis[broker_rate_col] - weekly_kpis[driver_rate_col]) / weekly_kpis[broker_rate_col] * 100).round(1)
+        weekly_kpis = valid_loads.groupby('WEEK_START').agg({
+            broker_rate_col: 'sum',
+            driver_rate_col: 'sum'
+        }).reset_index()
+        weekly_kpis['LOAD_COUNT'] = valid_loads.groupby('WEEK_START').size().values
+    else:
+        broker_rate_col = find_broker_rate_column(valid_loads)
+        driver_rate_col = find_driver_rate_column(valid_loads)
+        weekly_kpis = valid_loads.groupby('WEEK_START').agg({
+            count_column: 'count',
+            broker_rate_col: 'sum',
+            driver_rate_col: 'sum'
+        }).reset_index()
+        weekly_kpis = weekly_kpis.rename(columns={count_column: 'LOAD_COUNT'})
+    
+    weekly_kpis['WEEK_LABEL'] = weekly_kpis['WEEK_START'].apply(
+        lambda x: f"{x.strftime('%m/%d/%Y')} - {(x + timedelta(days=6)).strftime('%m/%d/%Y')}"
+    )
+    broker_rate_col = find_broker_rate_column(valid_loads)
+    driver_rate_col = find_driver_rate_column(valid_loads)
+    weekly_kpis['GROSS_MARGIN'] = ((weekly_kpis[broker_rate_col] - weekly_kpis[driver_rate_col]) / weekly_kpis[broker_rate_col] * 100).round(1)
+    
+    # HYBRID WEEK-OVER-WEEK COMPARISON SECTION
+    if enable_weekly_comparison and len(selected_weeks) > 1 and len(weekly_kpis) >= 2:
+        st.subheader("🔄 Week-over-Week Performance Comparison")
+        
+        # Import the new comparison functions
+        from enhanced_visualizer import (
+            create_week_over_week_comparison,
+            create_sparkline_trends,
+            create_weekly_comparison_table,
+            generate_week_over_week_insights
+        )
+        
+        # Create tabs for different comparison views
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Side-by-Side", "📈 Trend Analysis", "📋 Detailed Table", "💡 Insights"])
+        
+        with tab1:
+            st.markdown("**Current Week vs Previous Week Comparison**")
+            comparison_fig = create_week_over_week_comparison(weekly_kpis)
+            st.plotly_chart(comparison_fig, use_container_width=True)
+        
+        with tab2:
+            st.markdown(f"**Recent KPI Trends (Last {comparison_weeks} Weeks)**")
+            sparkline_fig = create_sparkline_trends(weekly_kpis, num_weeks=comparison_weeks)
+            st.plotly_chart(sparkline_fig, use_container_width=True)
+            
+            # Add trend explanation
+            st.markdown("""
+            **Trend Indicators:**
+            - 🟢 **Green lines**: Improving performance
+            - 🔴 **Red lines**: Declining performance  
+            - 📊 **Percentage**: Week-over-week change
+            """)
+        
+        with tab3:
+            st.markdown("**Detailed Weekly Comparison Table**")
+            comparison_table = create_weekly_comparison_table(weekly_kpis, num_weeks=comparison_weeks)
+            if not comparison_table.empty:
+                st.dataframe(comparison_table, use_container_width=True)
+                
+                # Add export functionality
+                csv = comparison_table.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Weekly Comparison Data",
+                    data=csv,
+                    file_name=f"weekly_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("No comparison data available")
+        
+        with tab4:
+            st.markdown("**Performance Insights & Recommendations**")
+            insights = generate_week_over_week_insights(weekly_kpis)
+            st.markdown(insights)
+    
+    # Show KPI data for each selected week individually (original functionality)
+    if len(selected_weeks) > 1:
+        st.subheader("📈 KPI by Week")
         
         # Display weekly KPIs in a table
         broker_rate_col = find_broker_rate_column(valid_loads)
