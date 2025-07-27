@@ -1089,23 +1089,67 @@ if uploaded_file is not None:
             st.info(f"📊 Showing analytics for: **{current_week_label}** (no previous week data available)")
     
     # Row 1: Billing Analysis
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Total Billing per Carrier")
-        fig1 = plot_total_billing_per_carrier(week_valid_loads)
-        st.plotly_chart(fig1, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis1 = generate_chart_analysis("carrier_billing", week_valid_loads)
-            st.markdown(analysis1)
-    
-    with col2:
-        st.subheader("Total Billing per Dispatcher")
-        fig2 = plot_total_billing_per_dispatcher(week_valid_loads)
-        st.plotly_chart(fig2, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis2 = generate_chart_analysis("dispatcher_billing", week_valid_loads)
-            st.markdown(analysis2)
+    if len(selected_weeks) == 1 and 'previous_week_start' in locals():
+        # Show comparison view for single week with previous week
+        st.subheader("📊 Week-over-Week Chart Comparison")
+        
+        # Current Week vs Previous Week tabs
+        tab1, tab2 = st.tabs(["Current Week", "Previous Week"])
+        
+        with tab1:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Total Billing per Carrier")
+                fig1_current = plot_total_billing_per_carrier(week_valid_loads)
+                st.plotly_chart(fig1_current, use_container_width=True)
+                with st.expander("📊 Analysis & Insights"):
+                    analysis1_current = generate_chart_analysis("carrier_billing", week_valid_loads)
+                    st.markdown(analysis1_current)
+            
+            with col2:
+                st.subheader("Total Billing per Dispatcher")
+                fig2_current = plot_total_billing_per_dispatcher(week_valid_loads)
+                st.plotly_chart(fig2_current, use_container_width=True)
+                with st.expander("📊 Analysis & Insights"):
+                    analysis2_current = generate_chart_analysis("dispatcher_billing", week_valid_loads)
+                    st.markdown(analysis2_current)
+        
+        with tab2:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Total Billing per Carrier")
+                fig1_previous = plot_total_billing_per_carrier(previous_week_valid_loads)
+                st.plotly_chart(fig1_previous, use_container_width=True)
+                with st.expander("📊 Analysis & Insights"):
+                    analysis1_previous = generate_chart_analysis("carrier_billing", previous_week_valid_loads)
+                    st.markdown(analysis1_previous)
+            
+            with col2:
+                st.subheader("Total Billing per Dispatcher")
+                fig2_previous = plot_total_billing_per_dispatcher(previous_week_valid_loads)
+                st.plotly_chart(fig2_previous, use_container_width=True)
+                with st.expander("📊 Analysis & Insights"):
+                    analysis2_previous = generate_chart_analysis("dispatcher_billing", previous_week_valid_loads)
+                    st.markdown(analysis2_previous)
+    else:
+        # Regular view for multiple weeks or no previous week
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Total Billing per Carrier")
+            fig1 = plot_total_billing_per_carrier(week_valid_loads)
+            st.plotly_chart(fig1, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis1 = generate_chart_analysis("carrier_billing", week_valid_loads)
+                st.markdown(analysis1)
+        
+        with col2:
+            st.subheader("Total Billing per Dispatcher")
+            fig2 = plot_total_billing_per_dispatcher(week_valid_loads)
+            st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis2 = generate_chart_analysis("dispatcher_billing", week_valid_loads)
+                st.markdown(analysis2)
     
     # Add spacing between rows
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -1220,7 +1264,7 @@ if uploaded_file is not None:
             top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
         else:
             # For single week, use the same logic as analytics section
-            if 'comparison_option' in locals() and "Previous Week" in comparison_option:
+            if 'previous_week_start' in locals() and 'comparison_option' in locals() and "Previous Week" in comparison_option:
                 top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
             else:
                 top_drivers_week_earnings = weekly_earnings.copy()
@@ -1235,7 +1279,7 @@ if uploaded_file is not None:
             target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
         else:
             # For single week, use the same logic as analytics section
-            if 'comparison_option' in locals() and "Previous Week" in comparison_option:
+            if 'previous_week_start' in locals() and 'comparison_option' in locals() and "Previous Week" in comparison_option:
                 target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
             else:
                 target_achievement_week_earnings = weekly_earnings.copy()
