@@ -504,8 +504,102 @@ if uploaded_file is not None:
         
         with tab1:
             st.markdown("**Current Week vs Previous Week Comparison**")
-            comparison_fig = create_week_over_week_comparison(weekly_kpis)
-            st.plotly_chart(comparison_fig, use_container_width=True)
+            
+            # Get current and previous week data for comparison
+            if len(weekly_kpis) >= 2:
+                current_week_data = weekly_kpis.iloc[-1]
+                previous_week_data = weekly_kpis.iloc[-2]
+                
+                # Extract values
+                current_loads = current_week_data['LOAD_COUNT']
+                current_billing = current_week_data[broker_rate_col]
+                current_driver_pay = current_week_data[driver_rate_col]
+                current_margin = current_week_data['GROSS_MARGIN']
+                
+                previous_loads = previous_week_data['LOAD_COUNT']
+                previous_billing = previous_week_data[broker_rate_col]
+                previous_driver_pay = previous_week_data[driver_rate_col]
+                previous_margin = previous_week_data['GROSS_MARGIN']
+                
+                # Calculate deltas
+                loads_delta = current_loads - previous_loads
+                billing_delta = current_billing - previous_billing
+                driver_pay_delta = current_driver_pay - previous_driver_pay
+                margin_delta = current_margin - previous_margin
+                
+                # Determine delta colors based on business logic
+                loads_delta_color = "normal" if loads_delta >= 0 else "inverse"
+                billing_delta_color = "normal" if billing_delta >= 0 else "inverse"
+                driver_pay_delta_color = "normal" if driver_pay_delta >= 0 else "inverse"
+                margin_delta_color = "normal" if margin_delta >= 0 else "inverse"
+                
+                # Display week labels
+                current_week_label = current_week_data['WEEK_LABEL']
+                previous_week_label = previous_week_data['WEEK_LABEL']
+                
+                st.markdown(f"**Comparing: {current_week_label} vs {previous_week_label}**")
+                
+                # Create Streamlit-native metrics in columns
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        label="Load Count",
+                        value=f"{current_loads:,}",
+                        delta=int(loads_delta),
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: {previous_loads:,}")
+                
+                with col2:
+                    st.metric(
+                        label="Total Billing",
+                        value=f"${current_billing:,.0f}",
+                        delta=f"{float(billing_delta):.2f}",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: ${previous_billing:,.0f}")
+                
+                with col3:
+                    st.metric(
+                        label="Driver Pay",
+                        value=f"${current_driver_pay:,.0f}",
+                        delta=f"{float(driver_pay_delta):.2f}",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: ${previous_driver_pay:,.0f}")
+                
+                with col4:
+                    st.metric(
+                        label="B-Rate %",
+                        value=f"{current_margin:.1f}%",
+                        delta=f"{float(margin_delta):.2f}",
+                        delta_color="normal",
+                        help="Gross margin percentage (Broker Rate minus Driver Pay, divided by Broker Rate)"
+                    )
+                    st.caption(f"Previous: {previous_margin:.1f}%")
+                
+                # Add summary insights
+                st.markdown("---")
+                st.markdown("**📊 Summary:**")
+                
+                # Count improvements vs declines
+                improvements = sum([
+                    loads_delta > 0,
+                    billing_delta > 0,
+                    driver_pay_delta > 0,
+                    margin_delta > 0
+                ])
+                
+                if improvements >= 3:
+                    st.success("🎯 **Strong Performance**: Most metrics showing improvement")
+                elif improvements >= 2:
+                    st.info("📊 **Mixed Performance**: Some areas improving, others need attention")
+                else:
+                    st.warning("⚠️ **Performance Decline**: Multiple metrics showing decreases")
+                
+            else:
+                st.warning("Need at least 2 weeks of data for comparison")
         
         with tab2:
             st.markdown(f"**Recent KPI Trends (Last {comparison_weeks} Weeks)**")
@@ -698,19 +792,56 @@ if uploaded_file is not None:
         }
         trailer_groups = [t for t in targets.keys() if t in weekly_earnings['TRAILER GROUP'].unique()]
         summary_md = """### 🚦 Driver Performance Summary by Trailer Type\n"""
+        
         for group in trailer_groups:
+            left_md = ""
+            right_md = ""
             sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group].copy()
-            total_drivers = len(sub)
-            overachievers = len(sub[sub['PERCENTAGE_TO_TARGET'] > 110])
-            on_target = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 100) & (sub['PERCENTAGE_TO_TARGET'] <= 110)])
-            watchlist = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 80) & (sub['PERCENTAGE_TO_TARGET'] < 100)])
-            underperformers = len(sub[sub['PERCENTAGE_TO_TARGET'] < 80])
-            summary_md += f"\n**{group}**: Total: {total_drivers} drivers\n"
-            summary_md += f"- 💚 Overachievers: {overachievers} ({overachievers/total_drivers*100:.1f}%)\n"
-            summary_md += f"- 🟢 On Target: {on_target} ({on_target/total_drivers*100:.1f}%)\n"
-            summary_md += f"- 🟡 Watchlist: {watchlist} ({watchlist/total_drivers*100:.1f}%)\n"
-            summary_md += f"- 🔴 Underperformers: {underperformers} ({underperformers/total_drivers*100:.1f}%)\n"
-        st.markdown(summary_md)
+            total_drivers = sub['DRIVER NAME'].nunique()
+            overachievers = sub[sub['PERCENTAGE_TO_TARGET'] > 110]['DRIVER NAME'].nunique()
+            on_target = sub[(sub['PERCENTAGE_TO_TARGET'] >= 100) & (sub['PERCENTAGE_TO_TARGET'] <= 110)]['DRIVER NAME'].nunique()
+            watchlist = sub[(sub['PERCENTAGE_TO_TARGET'] >= 80) & (sub['PERCENTAGE_TO_TARGET'] < 100)]['DRIVER NAME'].nunique()
+            underperformers = sub[sub['PERCENTAGE_TO_TARGET'] < 80]['DRIVER NAME'].nunique()
+            left_md += f"**{group}**: Total: {total_drivers} drivers\n"
+            left_md += f"- 💚 Overachievers: {overachievers} ({overachievers/total_drivers*100:.1f}%)\n"
+            left_md += f"- 🟢 On Target: {on_target} ({on_target/total_drivers*100:.1f}%)\n"
+            left_md += f"- 🟡 Watchlist: {watchlist} ({watchlist/total_drivers*100:.1f}%)\n"
+            left_md += f"- 🔴 Underperformers: {underperformers} ({underperformers/total_drivers*100:.1f}%)\n"
+            
+            # Week-over-Week Variation
+            right_md += f"**Performance Variation (Week over Week)**\n"
+            group_data = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group].copy()
+            weekly_performance = []
+            for week_start in sorted(group_data['WEEK_START'].unique()):
+                week_data = group_data[group_data['WEEK_START'] == week_start]
+                week_total = week_data['DRIVER NAME'].nunique()
+                week_overachievers = week_data[week_data['PERCENTAGE_TO_TARGET'] > 110]['DRIVER NAME'].nunique()
+                week_on_target = week_data[(week_data['PERCENTAGE_TO_TARGET'] >= 100) & (week_data['PERCENTAGE_TO_TARGET'] <= 110)]['DRIVER NAME'].nunique()
+                week_watchlist = week_data[(week_data['PERCENTAGE_TO_TARGET'] >= 80) & (week_data['PERCENTAGE_TO_TARGET'] < 100)]['DRIVER NAME'].nunique()
+                week_underperformers = week_data[week_data['PERCENTAGE_TO_TARGET'] < 80]['DRIVER NAME'].nunique()
+                weekly_performance.append({
+                    'week': week_start,
+                    'total': week_total,
+                    'overachievers': week_overachievers,
+                    'on_target': week_on_target,
+                    'watchlist': week_watchlist,
+                    'underperformers': week_underperformers
+                })
+            if len(weekly_performance) >= 2:
+                latest = weekly_performance[-1]
+                previous = weekly_performance[-2]
+                right_md += f"- 💚 Overachievers: {latest['overachievers']} → {previous['overachievers']} ({latest['overachievers'] - previous['overachievers']:+})\n"
+                right_md += f"- 🟢 On Target: {latest['on_target']} → {previous['on_target']} ({latest['on_target'] - previous['on_target']:+})\n"
+                right_md += f"- 🟡 Watchlist: {latest['watchlist']} → {previous['watchlist']} ({latest['watchlist'] - previous['watchlist']:+})\n"
+                right_md += f"- 🔴 Underperformers: {latest['underperformers']} → {previous['underperformers']} ({latest['underperformers'] - previous['underperformers']:+})\n"
+            else:
+                right_md += "_Not enough data for variation._\n"
+            
+            col1, col2 = st.columns([1,1])
+            with col1:
+                st.markdown(left_md)
+            with col2:
+                st.markdown(right_md)
         # --- End summary table ---
 
         # Weekly Driver Performance Charts (Separate Expanders)
