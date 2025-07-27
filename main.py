@@ -1138,32 +1138,40 @@ if uploaded_file is not None:
     
     with col1:
         st.subheader("Top Drivers by Weekly Earnings (Improved)")
+        # Use the same week selection logic as the analytics section
         if len(selected_weeks) >= 2:
-            # Use the same week selection as the analytics section
+            # For multiple weeks, use the same week as analytics
+            analytics_week_options = {label: i for i, label in enumerate(week_labels) if label in selected_weeks}
+            selected_analytics_week = st.selectbox(
+                "Select Week for Driver Analysis",
+                options=list(analytics_week_options.keys()),
+                index=len(analytics_week_options)-1,  # Default to most recent week
+                key="driver_analytics_week_selector"
+            )
+            selected_analytics_week_start = available_weeks[analytics_week_options[selected_analytics_week]]
             top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
-            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
         else:
             # For single week, use the same logic as analytics section
             if 'comparison_option' in locals() and "Previous Week" in comparison_option:
                 top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
             else:
                 top_drivers_week_earnings = weekly_earnings.copy()
-            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
+        fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
         st.plotly_chart(fig_top, use_container_width=True)
     
     with col2:
         st.subheader("Target Achievement by Trailer Type (Improved)")
+        # Use the same week selection logic as the analytics section
         if len(selected_weeks) >= 2:
-            # Use the same week selection as the analytics section
+            # For multiple weeks, use the same week as analytics
             target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
-            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
         else:
             # For single week, use the same logic as analytics section
             if 'comparison_option' in locals() and "Previous Week" in comparison_option:
                 target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
             else:
                 target_achievement_week_earnings = weekly_earnings.copy()
-            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
+        fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
         st.plotly_chart(fig_ach, use_container_width=True)
     
     # Add spacing before data tables
