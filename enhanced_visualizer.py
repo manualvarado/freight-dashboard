@@ -864,20 +864,20 @@ def generate_driver_performance_summary(weekly_earnings, metric_type="earnings",
     
     for group in trailer_groups:
         sub = weekly_earnings[weekly_earnings['TRAILER GROUP'] == group].copy()
-        total_drivers = len(sub)
+        total_drivers = sub['DRIVER NAME'].nunique()
         
         if metric_type == "earnings":
-            overachievers = len(sub[sub['PERCENTAGE_TO_TARGET'] > 110])
-            on_target = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 100) & (sub['PERCENTAGE_TO_TARGET'] <= 110)])
-            watchlist = len(sub[(sub['PERCENTAGE_TO_TARGET'] >= 80) & (sub['PERCENTAGE_TO_TARGET'] < 100)])
-            underperformers = len(sub[sub['PERCENTAGE_TO_TARGET'] < 80])
+            overachievers = sub[sub['PERCENTAGE_TO_TARGET'] > 110]['DRIVER NAME'].nunique()
+            on_target = sub[(sub['PERCENTAGE_TO_TARGET'] >= 100) & (sub['PERCENTAGE_TO_TARGET'] <= 110)]['DRIVER NAME'].nunique()
+            watchlist = sub[(sub['PERCENTAGE_TO_TARGET'] >= 80) & (sub['PERCENTAGE_TO_TARGET'] < 100)]['DRIVER NAME'].nunique()
+            underperformers = sub[sub['PERCENTAGE_TO_TARGET'] < 80]['DRIVER NAME'].nunique()
         elif metric_type == "miles":
             miles_target = 3000
             sub['MILES_PERCENTAGE'] = (sub['FULL MILES TOTAL'] / miles_target * 100).round(1)
-            overachievers = len(sub[sub['MILES_PERCENTAGE'] > 110])
-            on_target = len(sub[(sub['MILES_PERCENTAGE'] >= 100) & (sub['MILES_PERCENTAGE'] <= 110)])
-            watchlist = len(sub[(sub['MILES_PERCENTAGE'] >= 80) & (sub['MILES_PERCENTAGE'] < 100)])
-            underperformers = len(sub[sub['MILES_PERCENTAGE'] < 80])
+            overachievers = sub[sub['MILES_PERCENTAGE'] > 110]['DRIVER NAME'].nunique()
+            on_target = sub[(sub['MILES_PERCENTAGE'] >= 100) & (sub['MILES_PERCENTAGE'] <= 110)]['DRIVER NAME'].nunique()
+            watchlist = sub[(sub['MILES_PERCENTAGE'] >= 80) & (sub['MILES_PERCENTAGE'] < 100)]['DRIVER NAME'].nunique()
+            underperformers = sub[sub['MILES_PERCENTAGE'] < 80]['DRIVER NAME'].nunique()
         elif metric_type == "revenue_per_mile":
             revenue_targets = {
                 'Flatbed/Stepdeck': flatbed_rpm_target,
@@ -891,10 +891,10 @@ def generate_driver_performance_summary(weekly_earnings, metric_type="earnings",
             sub['REVENUE_PER_MILE'] = np.where(sub['FULL MILES TOTAL'] > 0, 
                                              sub[driver_rate_col] / sub['FULL MILES TOTAL'], 0)
             sub['REVENUE_PERCENTAGE'] = (sub['REVENUE_PER_MILE'] / target * 100).round(1)
-            overachievers = len(sub[sub['REVENUE_PERCENTAGE'] > 110])
-            on_target = len(sub[(sub['REVENUE_PERCENTAGE'] >= 100) & (sub['REVENUE_PERCENTAGE'] <= 110)])
-            watchlist = len(sub[(sub['REVENUE_PERCENTAGE'] >= 80) & (sub['REVENUE_PERCENTAGE'] < 100)])
-            underperformers = len(sub[sub['REVENUE_PERCENTAGE'] < 80])
+            overachievers = sub[sub['REVENUE_PERCENTAGE'] > 110]['DRIVER NAME'].nunique()
+            on_target = sub[(sub['REVENUE_PERCENTAGE'] >= 100) & (sub['REVENUE_PERCENTAGE'] <= 110)]['DRIVER NAME'].nunique()
+            watchlist = sub[(sub['REVENUE_PERCENTAGE'] >= 80) & (sub['REVENUE_PERCENTAGE'] < 100)]['DRIVER NAME'].nunique()
+            underperformers = sub[sub['REVENUE_PERCENTAGE'] < 80]['DRIVER NAME'].nunique()
         
         summary_text += f"\n{group}: Total: {total_drivers} drivers\n"
         summary_text += f"💚 Overachievers: {overachievers} ({overachievers/total_drivers*100:.1f}%)\n"
@@ -2282,10 +2282,15 @@ def create_sparkline_trends(weekly_kpis, kpi_columns=None, num_weeks=8):
         
         # Add annotation for trend
         fig.add_annotation(
-            x=0.5, y=0.9,
-            xref=f'x{i+1} domain', yref=f'y{i+1} domain',
+            x=len(values)-1,  # Use index position instead of label
+            y=values[-1],
+            xref=f'x{i+1}',
+            yref=f'y{i+1}',
             text=f"{change_pct:+.1f}%",
-            showarrow=False,
+            showarrow=True,
+            arrowhead=1,
+            ax=0,
+            ay=-30,
             font=dict(color=line_color, size=12, weight='bold'),
             bgcolor='rgba(255,255,255,0.8)',
             bordercolor=line_color,
