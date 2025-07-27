@@ -957,13 +957,7 @@ if uploaded_file is not None:
             else:
                 st.warning("⚠️ Revenue per mile chart not available - no miles column found in the data")
 
-        st.subheader("📊 Top Drivers by Weekly Earnings (Improved)")
-        fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
-        st.plotly_chart(fig_top, use_container_width=True)
 
-        st.subheader("📊 Target Achievement by Trailer Type (Improved)")
-        fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
-        st.plotly_chart(fig_ach, use_container_width=True)
 
         # Analysis section
         with st.expander("📊 Analysis & Insights"):
@@ -991,9 +985,40 @@ if uploaded_file is not None:
         week_valid_loads = valid_loads[valid_loads['WEEK_START'] == selected_analytics_week_start].copy()
         st.info(f"📊 Showing analytics for: **{selected_analytics_week}**")
     else:
-        # Use all data if only one week selected
-        week_valid_loads = valid_loads.copy()
-        st.info("📊 Showing analytics for all selected weeks")
+        # For single week, add comparison with previous week
+        st.subheader("📅 Week Comparison")
+        current_week_label = selected_weeks[0] if selected_weeks else "Current Week"
+        
+        # Find the previous week if available
+        all_available_weeks = sorted(valid_loads['WEEK_START'].unique())
+        current_week_start = valid_loads['WEEK_START'].iloc[0]  # Current selected week
+        
+        # Find previous week
+        previous_week_start = None
+        for week in all_available_weeks:
+            if week < current_week_start:
+                previous_week_start = week
+        
+        if previous_week_start:
+            previous_week_label = f"{previous_week_start.strftime('%m/%d/%Y')} - {(previous_week_start + timedelta(days=6)).strftime('%m/%d/%Y')}"
+            
+            comparison_option = st.selectbox(
+                "Select Week to View",
+                options=[current_week_label, f"Previous Week: {previous_week_label}"],
+                index=0,
+                key="single_week_comparison"
+            )
+            
+            if "Previous Week" in comparison_option:
+                week_valid_loads = valid_loads[valid_loads['WEEK_START'] == previous_week_start].copy()
+                st.info(f"📊 Showing analytics for: **Previous Week ({previous_week_label})**")
+            else:
+                week_valid_loads = valid_loads.copy()
+                st.info(f"📊 Showing analytics for: **{current_week_label}**")
+        else:
+            # No previous week available
+            week_valid_loads = valid_loads.copy()
+            st.info(f"📊 Showing analytics for: **{current_week_label}** (no previous week data available)")
     
     # Row 1: Billing Analysis
     col1, col2 = st.columns(2)
@@ -1118,7 +1143,12 @@ if uploaded_file is not None:
             top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
             fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
         else:
-            fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
+            # For single week, use the same logic as analytics section
+            if 'comparison_option' in locals() and "Previous Week" in comparison_option:
+                top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
+            else:
+                top_drivers_week_earnings = weekly_earnings.copy()
+            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
         st.plotly_chart(fig_top, use_container_width=True)
     
     with col2:
@@ -1128,7 +1158,12 @@ if uploaded_file is not None:
             target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
             fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
         else:
-            fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
+            # For single week, use the same logic as analytics section
+            if 'comparison_option' in locals() and "Previous Week" in comparison_option:
+                target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == previous_week_start].copy()
+            else:
+                target_achievement_week_earnings = weekly_earnings.copy()
+            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
         st.plotly_chart(fig_ach, use_container_width=True)
     
     # Add spacing before data tables
