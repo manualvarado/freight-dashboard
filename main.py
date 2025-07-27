@@ -958,21 +958,11 @@ if uploaded_file is not None:
                 st.warning("⚠️ Revenue per mile chart not available - no miles column found in the data")
 
         st.subheader("📊 Top Drivers by Weekly Earnings (Improved)")
-        if len(selected_weeks) >= 2:
-            # Use the same week selection as the analytics section
-            top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
-            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
-        else:
-            fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
+        fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
         st.plotly_chart(fig_top, use_container_width=True)
 
         st.subheader("📊 Target Achievement by Trailer Type (Improved)")
-        if len(selected_weeks) >= 2:
-            # Use the same week selection as the analytics section
-            target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
-            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
-        else:
-            fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
+        fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
         st.plotly_chart(fig_ach, use_container_width=True)
 
         # Analysis section
@@ -1112,6 +1102,35 @@ if uploaded_file is not None:
     with st.expander("📊 Analysis & Insights"):
         analysis11 = generate_chart_analysis("carrier_performance", week_valid_loads)
         st.markdown(analysis11)
+    
+    # Add spacing between rows
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # Row 7: Driver Performance Charts (Full Width)
+    st.subheader("📊 Driver Performance Analysis")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Top Drivers by Weekly Earnings (Improved)")
+        if len(selected_weeks) >= 2:
+            # Use the same week selection as the analytics section
+            top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
+        else:
+            fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
+        st.plotly_chart(fig_top, use_container_width=True)
+    
+    with col2:
+        st.subheader("Target Achievement by Trailer Type (Improved)")
+        if len(selected_weeks) >= 2:
+            # Use the same week selection as the analytics section
+            target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
+        else:
+            fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
+        st.plotly_chart(fig_ach, use_container_width=True)
+    
     # Add spacing before data tables
     st.markdown("<br><br>", unsafe_allow_html=True)
     
