@@ -848,53 +848,131 @@ if uploaded_file is not None:
         
         # Weekly Driver Earnings vs Target by Trailer Type
         with st.expander("📊 Weekly Driver Earnings vs Target by Trailer Type", expanded=False):
-            # Add earnings performance summary above chart
-            from enhanced_visualizer import generate_driver_performance_summary
-            earnings_summary = generate_driver_performance_summary(weekly_earnings, "earnings")
-            st.markdown(f"""
-            **🚦 Driver Performance Summary (Earnings):**
-            {earnings_summary}
-            """)
-            
-            fig_faceted = plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings)
-            st.plotly_chart(fig_faceted, use_container_width=True)
+            # Add week selection for this chart
+            if len(selected_weeks) >= 2:
+                week_options = {label: i for i, label in enumerate(week_labels) if label in selected_weeks}
+                selected_week_for_earnings = st.selectbox(
+                    "Select Week for Earnings Analysis",
+                    options=list(week_options.keys()),
+                    index=len(week_options)-1,  # Default to most recent week
+                    key="earnings_week_selector"
+                )
+                selected_week_start = available_weeks[week_options[selected_week_for_earnings]]
+                
+                # Filter data for selected week
+                week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_week_start].copy()
+                
+                # Add earnings performance summary above chart
+                from enhanced_visualizer import generate_driver_performance_summary
+                earnings_summary = generate_driver_performance_summary(week_earnings, "earnings")
+                st.markdown(f"""
+                **🚦 Driver Performance Summary (Earnings) - {selected_week_for_earnings}:**
+                {earnings_summary}
+                """)
+                
+                fig_faceted = plot_weekly_driver_earnings_vs_target_faceted(week_earnings)
+                st.plotly_chart(fig_faceted, use_container_width=True)
+            else:
+                # Fallback to all weeks if only one week selected
+                earnings_summary = generate_driver_performance_summary(weekly_earnings, "earnings")
+                st.markdown(f"""
+                **🚦 Driver Performance Summary (Earnings):**
+                {earnings_summary}
+                """)
+                
+                fig_faceted = plot_weekly_driver_earnings_vs_target_faceted(weekly_earnings)
+                st.plotly_chart(fig_faceted, use_container_width=True)
 
         # Weekly Driver Miles vs Target by Trailer Type
         with st.expander("📊 Weekly Driver Miles vs Target by Trailer Type", expanded=False):
             if miles_col:
-                # Add miles performance summary above chart
-                miles_summary = generate_driver_performance_summary(weekly_earnings, "miles")
-                st.markdown(f"""
-                **🚦 Driver Performance Summary (Miles):**
-                {miles_summary}
-                """)
-                
-                fig_miles = plot_weekly_driver_miles_vs_target_faceted(weekly_earnings, miles_col=miles_col)
-                st.plotly_chart(fig_miles, use_container_width=True)
+                if len(selected_weeks) >= 2:
+                    selected_week_for_miles = st.selectbox(
+                        "Select Week for Miles Analysis",
+                        options=list(week_options.keys()),
+                        index=len(week_options)-1,  # Default to most recent week
+                        key="miles_week_selector"
+                    )
+                    selected_week_start = available_weeks[week_options[selected_week_for_miles]]
+                    
+                    # Filter data for selected week
+                    week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_week_start].copy()
+                    
+                    # Add miles performance summary above chart
+                    miles_summary = generate_driver_performance_summary(week_earnings, "miles")
+                    st.markdown(f"""
+                    **🚦 Driver Performance Summary (Miles) - {selected_week_for_miles}:**
+                    {miles_summary}
+                    """)
+                    
+                    fig_miles = plot_weekly_driver_miles_vs_target_faceted(week_earnings, miles_col=miles_col)
+                    st.plotly_chart(fig_miles, use_container_width=True)
+                else:
+                    # Fallback to all weeks if only one week selected
+                    miles_summary = generate_driver_performance_summary(weekly_earnings, "miles")
+                    st.markdown(f"""
+                    **🚦 Driver Performance Summary (Miles):**
+                    {miles_summary}
+                    """)
+                    
+                    fig_miles = plot_weekly_driver_miles_vs_target_faceted(weekly_earnings, miles_col=miles_col)
+                    st.plotly_chart(fig_miles, use_container_width=True)
             else:
                 st.warning("⚠️ Miles chart not available - no miles column found in the data")
 
         # Weekly Driver Revenue per Mile vs Target by Trailer Type
         with st.expander("📊 Weekly Driver Revenue per Mile vs Target by Trailer Type", expanded=False):
             if miles_col:
-                # Add revenue per mile performance summary above chart
-                revenue_summary = generate_driver_performance_summary(weekly_earnings, "revenue_per_mile", flatbed_rpm_target, dryvan_rpm_target)
-                st.markdown(f"""
-                **🚦 Driver Performance Summary (Revenue per Mile):**
-                {revenue_summary}
-                """)
-                
-                fig_revenue_per_mile = plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col=miles_col, flatbed_rpm_target=flatbed_rpm_target, dryvan_rpm_target=dryvan_rpm_target)
-                st.plotly_chart(fig_revenue_per_mile, use_container_width=True)
+                if len(selected_weeks) >= 2:
+                    selected_week_for_rpm = st.selectbox(
+                        "Select Week for Revenue per Mile Analysis",
+                        options=list(week_options.keys()),
+                        index=len(week_options)-1,  # Default to most recent week
+                        key="rpm_week_selector"
+                    )
+                    selected_week_start = available_weeks[week_options[selected_week_for_rpm]]
+                    
+                    # Filter data for selected week
+                    week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_week_start].copy()
+                    
+                    # Add revenue per mile performance summary above chart
+                    revenue_summary = generate_driver_performance_summary(week_earnings, "revenue_per_mile", flatbed_rpm_target, dryvan_rpm_target)
+                    st.markdown(f"""
+                    **🚦 Driver Performance Summary (Revenue per Mile) - {selected_week_for_rpm}:**
+                    {revenue_summary}
+                    """)
+                    
+                    fig_revenue_per_mile = plot_weekly_driver_revenue_per_mile_vs_target_faceted(week_earnings, miles_col=miles_col, flatbed_rpm_target=flatbed_rpm_target, dryvan_rpm_target=dryvan_rpm_target)
+                    st.plotly_chart(fig_revenue_per_mile, use_container_width=True)
+                else:
+                    # Fallback to all weeks if only one week selected
+                    revenue_summary = generate_driver_performance_summary(weekly_earnings, "revenue_per_mile", flatbed_rpm_target, dryvan_rpm_target)
+                    st.markdown(f"""
+                    **🚦 Driver Performance Summary (Revenue per Mile):**
+                    {revenue_summary}
+                    """)
+                    
+                    fig_revenue_per_mile = plot_weekly_driver_revenue_per_mile_vs_target_faceted(weekly_earnings, miles_col=miles_col, flatbed_rpm_target=flatbed_rpm_target, dryvan_rpm_target=dryvan_rpm_target)
+                    st.plotly_chart(fig_revenue_per_mile, use_container_width=True)
             else:
                 st.warning("⚠️ Revenue per mile chart not available - no miles column found in the data")
 
         st.subheader("📊 Top Drivers by Weekly Earnings (Improved)")
-        fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
+        if len(selected_weeks) >= 2:
+            # Use the same week selection as the analytics section
+            top_drivers_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            fig_top = plot_top_drivers_by_weekly_earnings_improved(top_drivers_week_earnings)
+        else:
+            fig_top = plot_top_drivers_by_weekly_earnings_improved(weekly_earnings)
         st.plotly_chart(fig_top, use_container_width=True)
 
         st.subheader("📊 Target Achievement by Trailer Type (Improved)")
-        fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
+        if len(selected_weeks) >= 2:
+            # Use the same week selection as the analytics section
+            target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            fig_ach = plot_target_achievement_by_trailer_type_improved(target_achievement_week_earnings)
+        else:
+            fig_ach = plot_target_achievement_by_trailer_type_improved(weekly_earnings)
         st.plotly_chart(fig_ach, use_container_width=True)
 
         # Analysis section
@@ -907,23 +985,43 @@ if uploaded_file is not None:
     # Enhanced Visualizations
     st.header("📈 Enhanced Analytics")
     
+    # Add week selection for enhanced analytics
+    if len(selected_weeks) >= 2:
+        st.subheader("📅 Week Selection for Analytics")
+        analytics_week_options = {label: i for i, label in enumerate(week_labels) if label in selected_weeks}
+        selected_analytics_week = st.selectbox(
+            "Select Week for Analytics",
+            options=list(analytics_week_options.keys()),
+            index=len(analytics_week_options)-1,  # Default to most recent week
+            key="analytics_week_selector"
+        )
+        selected_analytics_week_start = available_weeks[analytics_week_options[selected_analytics_week]]
+        
+        # Filter data for selected week
+        week_valid_loads = valid_loads[valid_loads['WEEK_START'] == selected_analytics_week_start].copy()
+        st.info(f"📊 Showing analytics for: **{selected_analytics_week}**")
+    else:
+        # Use all data if only one week selected
+        week_valid_loads = valid_loads.copy()
+        st.info("📊 Showing analytics for all selected weeks")
+    
     # Row 1: Billing Analysis
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Total Billing per Carrier")
-        fig1 = plot_total_billing_per_carrier(valid_loads)
+        fig1 = plot_total_billing_per_carrier(week_valid_loads)
         st.plotly_chart(fig1, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis1 = generate_chart_analysis("carrier_billing", valid_loads)
+            analysis1 = generate_chart_analysis("carrier_billing", week_valid_loads)
             st.markdown(analysis1)
     
     with col2:
         st.subheader("Total Billing per Dispatcher")
-        fig2 = plot_total_billing_per_dispatcher(valid_loads)
+        fig2 = plot_total_billing_per_dispatcher(week_valid_loads)
         st.plotly_chart(fig2, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis2 = generate_chart_analysis("dispatcher_billing", valid_loads)
+            analysis2 = generate_chart_analysis("dispatcher_billing", week_valid_loads)
             st.markdown(analysis2)
     
     # Add spacing between rows
@@ -934,18 +1032,18 @@ if uploaded_file is not None:
     
     with col1:
         st.subheader("Dispatcher Performance Matrix")
-        fig3 = plot_bd_margin_performance(valid_loads)
+        fig3 = plot_bd_margin_performance(week_valid_loads)
         st.plotly_chart(fig3, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis3 = generate_chart_analysis("dispatcher_performance", valid_loads)
+            analysis3 = generate_chart_analysis("dispatcher_performance", week_valid_loads)
             st.markdown(analysis3)
     
     with col2:
         st.subheader("Load Status Distribution per Dispatcher")
-        fig4 = plot_loads_per_dispatcher_by_status(df)
+        fig4 = plot_loads_per_dispatcher_by_status(week_valid_loads)
         st.plotly_chart(fig4, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis4 = generate_chart_analysis("load_status", df)
+            analysis4 = generate_chart_analysis("load_status", week_valid_loads)
             st.markdown(analysis4)
     
     # Add spacing between rows
@@ -956,18 +1054,18 @@ if uploaded_file is not None:
     
     with col1:
         st.subheader("Top 20 Drivers by Earnings")
-        fig5 = plot_top_drivers_earnings(valid_loads)
+        fig5 = plot_top_drivers_earnings(week_valid_loads)
         st.plotly_chart(fig5, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis5 = generate_chart_analysis("driver_earnings", valid_loads)
+            analysis5 = generate_chart_analysis("driver_earnings", week_valid_loads)
             st.markdown(analysis5)
     
     with col2:
         st.subheader("Billing by Trailer Type")
-        fig6 = plot_billing_per_trailer_type(valid_loads)
+        fig6 = plot_billing_per_trailer_type(week_valid_loads)
         st.plotly_chart(fig6, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis6 = generate_chart_analysis("trailer_billing", valid_loads)
+            analysis6 = generate_chart_analysis("trailer_billing", week_valid_loads)
             st.markdown(analysis6)
     
     # Add spacing between rows
@@ -978,18 +1076,18 @@ if uploaded_file is not None:
     
     with col1:
         st.subheader("Revenue per Mile per Dispatcher")
-        fig8 = plot_revenue_per_mile_per_dispatcher(valid_loads)
+        fig8 = plot_revenue_per_mile_per_dispatcher(week_valid_loads)
         st.plotly_chart(fig8, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis8 = generate_chart_analysis("revenue_per_mile_dispatcher", valid_loads)
+            analysis8 = generate_chart_analysis("revenue_per_mile_dispatcher", week_valid_loads)
             st.markdown(analysis8)
     
     with col2:
         st.subheader("Driver Revenue per Mile per Dispatcher")
-        fig8b = plot_driver_revenue_per_mile_per_dispatcher(valid_loads)
+        fig8b = plot_driver_revenue_per_mile_per_dispatcher(week_valid_loads)
         st.plotly_chart(fig8b, use_container_width=True)
         with st.expander("📊 Analysis & Insights"):
-            analysis8b = generate_chart_analysis("driver_revenue_per_mile_dispatcher", valid_loads)
+            analysis8b = generate_chart_analysis("driver_revenue_per_mile_dispatcher", week_valid_loads)
             st.markdown(analysis8b)
     
     # Add spacing between rows
@@ -1007,12 +1105,12 @@ if uploaded_file is not None:
     - **Bottom Left**: Revenue per mile by carrier
     - **Bottom Right**: Efficiency scatter plot (bubble size = total billing, color = revenue per mile)
     """)
-    fig11_top, fig11_bottom = plot_carrier_performance_analysis(valid_loads)
+    fig11_top, fig11_bottom = plot_carrier_performance_analysis(week_valid_loads)
     st.plotly_chart(fig11_top, use_container_width=True)
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.plotly_chart(fig11_bottom, use_container_width=True)
     with st.expander("📊 Analysis & Insights"):
-        analysis11 = generate_chart_analysis("carrier_performance", valid_loads)
+        analysis11 = generate_chart_analysis("carrier_performance", week_valid_loads)
         st.markdown(analysis11)
     # Add spacing before data tables
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -1024,12 +1122,18 @@ if uploaded_file is not None:
     
     with col1:
         st.subheader("Dispatcher Billing Summary")
-        dispatcher_billing_df = get_dispatcher_billing(valid_loads)
+        if len(selected_weeks) >= 2:
+            dispatcher_billing_df = get_dispatcher_billing(week_valid_loads)
+        else:
+            dispatcher_billing_df = get_dispatcher_billing(valid_loads)
         st.dataframe(dispatcher_billing_df, use_container_width=True)
     
     with col2:
         st.subheader("Carrier Miles Summary")
-        carrier_miles_df = get_carrier_miles(valid_loads)
+        if len(selected_weeks) >= 2:
+            carrier_miles_df = get_carrier_miles(week_valid_loads)
+        else:
+            carrier_miles_df = get_carrier_miles(valid_loads)
         st.dataframe(carrier_miles_df, use_container_width=True)
     
     # Add spacing before export section
