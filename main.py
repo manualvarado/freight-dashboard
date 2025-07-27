@@ -986,7 +986,7 @@ if uploaded_file is not None:
         st.info(f"📊 Showing analytics for: **{selected_analytics_week}**")
     else:
         # For single week, add comparison with previous week
-        st.subheader("📅 Week Comparison")
+        st.subheader("📅 Week-over-Week Comparison")
         current_week_label = selected_weeks[0] if selected_weeks else "Current Week"
         
         # Find the previous week if available
@@ -1002,19 +1002,87 @@ if uploaded_file is not None:
         if previous_week_start:
             previous_week_label = f"{previous_week_start.strftime('%m/%d/%Y')} - {(previous_week_start + timedelta(days=6)).strftime('%m/%d/%Y')}"
             
-            comparison_option = st.selectbox(
-                "Select Week to View",
-                options=[current_week_label, f"Previous Week: {previous_week_label}"],
-                index=0,
-                key="single_week_comparison"
-            )
+            # Show both weeks side by side
+            col1, col2 = st.columns(2)
             
-            if "Previous Week" in comparison_option:
-                week_valid_loads = valid_loads[valid_loads['WEEK_START'] == previous_week_start].copy()
-                st.info(f"📊 Showing analytics for: **Previous Week ({previous_week_label})**")
-            else:
-                week_valid_loads = valid_loads.copy()
-                st.info(f"📊 Showing analytics for: **{current_week_label}**")
+            with col1:
+                st.info(f"📊 **Current Week:** {current_week_label}")
+                current_week_valid_loads = valid_loads.copy()
+            
+            with col2:
+                st.info(f"📊 **Previous Week:** {previous_week_label}")
+                previous_week_valid_loads = valid_loads[valid_loads['WEEK_START'] == previous_week_start].copy()
+            
+            # Use current week as default for charts
+            week_valid_loads = current_week_valid_loads
+            
+            # Add comparison metrics
+            st.subheader("📊 Week-over-Week Metrics Comparison")
+            
+            # Calculate key metrics for both weeks
+            broker_rate_col = find_broker_rate_column(valid_loads)
+            driver_rate_col = find_driver_rate_column(valid_loads)
+            
+            if broker_rate_col and driver_rate_col:
+                # Current week metrics
+                current_loads = len(current_week_valid_loads)
+                current_billing = current_week_valid_loads[broker_rate_col].sum()
+                current_driver_pay = current_week_valid_loads[driver_rate_col].sum()
+                current_margin = current_billing - current_driver_pay
+                current_margin_pct = (current_margin / current_billing * 100) if current_billing > 0 else 0
+                
+                # Previous week metrics
+                previous_loads = len(previous_week_valid_loads)
+                previous_billing = previous_week_valid_loads[broker_rate_col].sum()
+                previous_driver_pay = previous_week_valid_loads[driver_rate_col].sum()
+                previous_margin = previous_billing - previous_driver_pay
+                previous_margin_pct = (previous_margin / previous_billing * 100) if previous_billing > 0 else 0
+                
+                # Calculate changes
+                loads_change = current_loads - previous_loads
+                billing_change = current_billing - previous_billing
+                driver_pay_change = current_driver_pay - previous_driver_pay
+                margin_change = current_margin - previous_margin
+                margin_pct_change = current_margin_pct - previous_margin_pct
+                
+                # Display comparison metrics
+                comp_col1, comp_col2, comp_col3, comp_col4 = st.columns(4)
+                
+                with comp_col1:
+                    st.metric(
+                        label="Load Count",
+                        value=f"{current_loads:,}",
+                        delta=f"{loads_change:+}",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: {previous_loads:,}")
+                
+                with comp_col2:
+                    st.metric(
+                        label="Total Billing",
+                        value=f"${current_billing:,.0f}",
+                        delta=f"${billing_change:+,.0f}",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: ${previous_billing:,.0f}")
+                
+                with comp_col3:
+                    st.metric(
+                        label="Driver Pay",
+                        value=f"${current_driver_pay:,.0f}",
+                        delta=f"${driver_pay_change:+,.0f}",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: ${previous_driver_pay:,.0f}")
+                
+                with comp_col4:
+                    st.metric(
+                        label="B-Rate %",
+                        value=f"{current_margin_pct:.1f}%",
+                        delta=f"{margin_pct_change:+.1f}%",
+                        delta_color="normal"
+                    )
+                    st.caption(f"Previous: {previous_margin_pct:.1f}%")
         else:
             # No previous week available
             week_valid_loads = valid_loads.copy()
