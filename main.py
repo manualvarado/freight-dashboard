@@ -1155,45 +1155,88 @@ if uploaded_file is not None:
     st.markdown("<br><br>", unsafe_allow_html=True)
     
     # Row 2: Performance Analysis
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Dispatcher Performance Matrix")
-        fig3 = plot_bd_margin_performance(week_valid_loads)
-        st.plotly_chart(fig3, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis3 = generate_chart_analysis("dispatcher_performance", week_valid_loads)
-            st.markdown(analysis3)
-    
-    with col2:
-        st.subheader("Load Status Distribution per Dispatcher")
-        fig4 = plot_loads_per_dispatcher_by_status(week_valid_loads)
-        st.plotly_chart(fig4, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis4 = generate_chart_analysis("load_status", week_valid_loads)
-            st.markdown(analysis4)
-    
-    # Add spacing between rows
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    # Row 3: Driver Analysis
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Top 20 Drivers by Earnings")
-        fig5 = plot_top_drivers_earnings(week_valid_loads)
-        st.plotly_chart(fig5, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis5 = generate_chart_analysis("driver_earnings", week_valid_loads)
-            st.markdown(analysis5)
-    
-    with col2:
-        st.subheader("Billing by Trailer Type")
-        fig6 = plot_billing_per_trailer_type(week_valid_loads)
-        st.plotly_chart(fig6, use_container_width=True)
-        with st.expander("📊 Analysis & Insights"):
-            analysis6 = generate_chart_analysis("trailer_billing", week_valid_loads)
-            st.markdown(analysis6)
+    if len(selected_weeks) == 1 and 'previous_week_start' in locals():
+        # Show comparison view for single week with previous week
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Dispatcher Performance Matrix")
+            fig3_current = plot_bd_margin_performance(week_valid_loads)
+            st.plotly_chart(fig3_current, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis3_current = generate_chart_analysis("dispatcher_performance", week_valid_loads)
+                st.markdown(analysis3_current)
+        
+        with col2:
+            st.subheader("Load Status Distribution per Dispatcher")
+            fig4_current = plot_loads_per_dispatcher_by_status(week_valid_loads)
+            st.plotly_chart(fig4_current, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis4_current = generate_chart_analysis("load_status", week_valid_loads)
+                st.markdown(analysis4_current)
+        
+        # Add spacing between rows
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Row 3: Driver Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Top 20 Drivers by Earnings")
+            fig5_current = plot_top_drivers_earnings(week_valid_loads)
+            st.plotly_chart(fig5_current, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis5_current = generate_chart_analysis("driver_earnings", week_valid_loads)
+                st.markdown(analysis5_current)
+        
+        with col2:
+            st.subheader("Billing by Trailer Type")
+            fig6_current = plot_billing_per_trailer_type(week_valid_loads)
+            st.plotly_chart(fig6_current, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis6_current = generate_chart_analysis("trailer_billing", week_valid_loads)
+                st.markdown(analysis6_current)
+    else:
+        # Regular view for multiple weeks or no previous week
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Dispatcher Performance Matrix")
+            fig3 = plot_bd_margin_performance(week_valid_loads)
+            st.plotly_chart(fig3, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis3 = generate_chart_analysis("dispatcher_performance", week_valid_loads)
+                st.markdown(analysis3)
+        
+        with col2:
+            st.subheader("Load Status Distribution per Dispatcher")
+            fig4 = plot_loads_per_dispatcher_by_status(week_valid_loads)
+            st.plotly_chart(fig4, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis4 = generate_chart_analysis("load_status", week_valid_loads)
+                st.markdown(analysis4)
+        
+        # Add spacing between rows
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Row 3: Driver Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Top 20 Drivers by Earnings")
+            fig5 = plot_top_drivers_earnings(week_valid_loads)
+            st.plotly_chart(fig5, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis5 = generate_chart_analysis("driver_earnings", week_valid_loads)
+                st.markdown(analysis5)
+        
+        with col2:
+            st.subheader("Billing by Trailer Type")
+            fig6 = plot_billing_per_trailer_type(week_valid_loads)
+            st.plotly_chart(fig6, use_container_width=True)
+            with st.expander("📊 Analysis & Insights"):
+                analysis6 = generate_chart_analysis("trailer_billing", week_valid_loads)
+                st.markdown(analysis6)
     
     # Add spacing between rows
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -1276,7 +1319,10 @@ if uploaded_file is not None:
         # Use the same week selection logic as the analytics section
         if len(selected_weeks) >= 2:
             # For multiple weeks, use the same week as analytics
-            target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            if 'selected_analytics_week_start' in locals():
+                target_achievement_week_earnings = weekly_earnings[weekly_earnings['WEEK_START'] == selected_analytics_week_start].copy()
+            else:
+                target_achievement_week_earnings = weekly_earnings.copy()
         else:
             # For single week, use the same logic as analytics section
             if 'previous_week_start' in locals() and 'comparison_option' in locals() and "Previous Week" in comparison_option:
